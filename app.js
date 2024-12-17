@@ -53,21 +53,24 @@ async function start() {
           const content = JSON.parse(msg.content.toString());
           logEvent('message', 'Successfully parsed message content', { 
             messageId,
-            eventType: content.eventType 
+            eventType: content.eventType,
+            fullContent: content
           });
 
           // Extract the opportunity data
-          const opportunityData = content.data.data;
+          const opportunityData = content.data;
           logEvent('processing', 'Extracted opportunity data', { 
             messageId,
-            opportunityId: opportunityData.id || 'unknown'
+            opportunityId: opportunityData.id || 'unknown',
+            fullData: opportunityData
           });
 
           // Add status field
           opportunityData.status = 'in review';
           logEvent('processing', 'Added status field to opportunity data', {
             messageId,
-            status: opportunityData.status
+            status: opportunityData.status,
+            finalData: opportunityData
           });
 
           // Store in MongoDB
