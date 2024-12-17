@@ -41,7 +41,7 @@ async function validateToken(req, res, next) {
     
     try {
       // Validate token with auth service
-      const response = await axios.post(`${AUTH_SERVICE_URL}/validate-token`, { token }, {
+      const response = await axios.post(`${AUTH_SERVICE_URL}/v1/token/validate`, { token }, {
         headers: { 'Content-Type': 'application/json' }
       });
 
