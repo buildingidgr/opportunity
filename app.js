@@ -240,6 +240,61 @@ async function setupHttpServer(db) {
         .limit(limit)
         .toArray();
 
+      // Mask sensitive data in opportunities
+      const maskedOpportunities = opportunities.map(opportunity => {
+        // Create a copy of the opportunity to avoid modifying the original
+        const maskedOpp = { ...opportunity };
+
+        // Mask address fields
+        if (maskedOpp.address) {
+          maskedOpp.address = 'Generated random address';
+        }
+        if (maskedOpp.streetAddress) {
+          maskedOpp.streetAddress = 'Generated random address';
+        }
+        if (maskedOpp.city) {
+          maskedOpp.city = 'Generated random address';
+        }
+        if (maskedOpp.state) {
+          maskedOpp.state = 'Generated random address';
+        }
+        if (maskedOpp.country) {
+          maskedOpp.country = 'Generated random address';
+        }
+        if (maskedOpp.postalCode) {
+          maskedOpp.postalCode = 'Generated random address';
+        }
+
+        // Mask contact information
+        if (maskedOpp.contact) {
+          maskedOpp.contact = {
+            ...maskedOpp.contact,
+            name: 'Generated random name',
+            email: 'Generated random email',
+            phone: 'Generated random phone'
+          };
+        }
+
+        // Handle nested contact fields if they exist at root level
+        if (maskedOpp.contactName) {
+          maskedOpp.contactName = 'Generated random name';
+        }
+        if (maskedOpp.contactEmail) {
+          maskedOpp.contactEmail = 'Generated random email';
+        }
+        if (maskedOpp.contactPhone) {
+          maskedOpp.contactPhone = 'Generated random phone';
+        }
+        if (maskedOpp.email) {
+          maskedOpp.email = 'Generated random email';
+        }
+        if (maskedOpp.phone) {
+          maskedOpp.phone = 'Generated random phone';
+        }
+
+        return maskedOpp;
+      });
+
       logEvent('http', 'Successfully fetched public opportunities', { 
         count: opportunities.length,
         page,
@@ -249,8 +304,8 @@ async function setupHttpServer(db) {
 
       // Log the actual documents for debugging
       logEvent('debug', 'Fetched documents', {
-        documentCount: opportunities.length,
-        documents: opportunities.map(doc => ({
+        documentCount: maskedOpportunities.length,
+        documents: maskedOpportunities.map(doc => ({
           id: doc._id,
           status: doc.status,
           category: doc.category
@@ -258,7 +313,7 @@ async function setupHttpServer(db) {
       });
 
       res.json({
-        opportunities,
+        opportunities: maskedOpportunities,
         pagination: {
           currentPage: page,
           totalPages,
