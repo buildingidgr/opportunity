@@ -84,7 +84,8 @@ async function setupHttpServer(db) {
       logEvent('http', 'Fetching public opportunities', { 
         page,
         limit,
-        category: category || 'all'
+        category: category || 'all',
+        query
       });
 
       // Get total count for pagination
@@ -93,6 +94,17 @@ async function setupHttpServer(db) {
 
       // Calculate pagination values
       const totalPages = Math.ceil(totalCount / limit);
+
+      // Validate requested page number
+      if (page > totalPages && totalCount > 0) {
+        return res.status(400).json({
+          error: `Page ${page} does not exist. Total pages available: ${totalPages}`,
+          totalItems: totalCount,
+          totalPages: totalPages,
+          suggestion: `Try accessing page 1 to ${totalPages}`
+        });
+      }
+
       const skip = (page - 1) * limit;
 
       // Fetch opportunities
@@ -106,7 +118,18 @@ async function setupHttpServer(db) {
       logEvent('http', 'Successfully fetched public opportunities', { 
         count: opportunities.length,
         page,
-        totalPages
+        totalPages,
+        query
+      });
+
+      // Log the actual documents for debugging
+      logEvent('debug', 'Fetched documents', {
+        documentCount: opportunities.length,
+        documents: opportunities.map(doc => ({
+          id: doc._id,
+          status: doc.status,
+          category: doc.category
+        }))
       });
 
       res.json({
@@ -120,7 +143,8 @@ async function setupHttpServer(db) {
           hasPreviousPage: page > 1
         },
         filter: {
-          category: category || 'all'
+          category: category || 'all',
+          appliedQuery: query
         }
       });
     } catch (error) {
