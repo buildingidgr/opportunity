@@ -42,18 +42,18 @@ async function validateToken(req, res, next) {
     try {
       // Log the full token for debugging (be careful with this in production)
       logEvent('auth', 'Attempting to validate token with auth service', {
-        url: `${AUTH_SERVICE_URL}/validate`,  // Changed endpoint
+        url: `${AUTH_SERVICE_URL}/v1/token/validate`,
         token: token.substring(0, 10) + '...' // Log first 10 chars of token
       });
 
       // Validate token with auth service
       const response = await axios.post(
-        `${AUTH_SERVICE_URL}/validate`,  // Changed endpoint
+        `${AUTH_SERVICE_URL}/v1/token/validate`,
         { token }, 
         {
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}` // Also send token in headers
+            'Authorization': `Bearer ${token}`
           },
           timeout: 5000 // 5 second timeout
         }
@@ -113,7 +113,7 @@ async function validateToken(req, res, next) {
         return res.status(503).json({ 
           error: 'Auth service is unavailable',
           details: 'Could not connect to authentication service',
-          authServiceUrl: AUTH_SERVICE_URL // Include URL for debugging
+          authServiceUrl: AUTH_SERVICE_URL
         });
       }
 
