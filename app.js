@@ -11,6 +11,38 @@ const MONGODB_COLLECTION_NAME = process.env.MONGODB_COLLECTION_NAME || 'opportun
 const PORT = process.env.PORT || 3000;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service-url';
 
+// Constants for coordinate masking
+const EARTH_RADIUS_KM = 6371; // Earth's radius in kilometers
+const MAX_OFFSET_KM = 5; // Maximum offset in kilometers
+
+// Function to generate random coordinates within 5km radius
+function getRandomCoordinatesWithinRadius(originalLat, originalLng) {
+  // Convert max offset from kilometers to radians
+  const maxOffsetRadians = MAX_OFFSET_KM / EARTH_RADIUS_KM;
+
+  // Generate random distance within max offset (in radians)
+  const r = maxOffsetRadians * Math.sqrt(Math.random());
+  
+  // Generate random angle
+  const theta = Math.random() * 2 * Math.PI;
+
+  // Calculate offset
+  const dx = r * Math.cos(theta);
+  const dy = r * Math.sin(theta);
+
+  // Convert latitude offset to degrees
+  const newLat = originalLat + (dy * 180) / Math.PI;
+  
+  // Convert longitude offset to degrees, accounting for latitude
+  const newLng = originalLng + (dx * 180) / (Math.PI * Math.cos(originalLat * Math.PI / 180));
+
+  // Round to 4 decimal places (approximately 11 meters precision)
+  return {
+    lat: Number(newLat.toFixed(4)),
+    lng: Number(newLng.toFixed(4))
+  };
+}
+
 // Create Express app
 const app = express();
 app.use(express.json());
@@ -249,12 +281,15 @@ async function setupHttpServer(db) {
         if (maskedOpp.data && maskedOpp.data.project) {
           // Mask location data
           if (maskedOpp.data.project.location) {
+            const originalCoords = maskedOpp.data.project.location.coordinates;
+            const maskedCoords = getRandomCoordinatesWithinRadius(
+              originalCoords.lat,
+              originalCoords.lng
+            );
+
             maskedOpp.data.project.location = {
               address: 'Generated random address',
-              coordinates: {
-                lat: 0,
-                lng: 0
-              }
+              coordinates: maskedCoords
             };
           }
         }
