@@ -61,6 +61,106 @@ async function setupHttpServer(db) {
     }
   });
 
+  // PATCH endpoint to update opportunity status
+  app.patch('/opportunities/:id/status', async (req, res) => {
+    try {
+      const id = req.params.id;
+      const newStatus = req.body.status?.toLowerCase();
+      
+      logEvent('http', 'Attempting to update opportunity status', { 
+        id,
+        newStatus 
+      });
+
+      // Validate status value
+      const VALID_STATUSES = ['in review', 'public', 'private', 'rejected'];
+      if (!newStatus || !VALID_STATUSES.includes(newStatus)) {
+        logEvent('http', 'Invalid status value provided', { newStatus });
+        return res.status(400).json({ 
+          error: 'Invalid status. Allowed values: in review, public, private, rejected' 
+        });
+      }
+
+      // Get current opportunity
+      const opportunity = await db.collection(MONGODB_COLLECTION_NAME)
+        .findOne({ _id: new ObjectId(id) });
+
+      if (!opportunity) {
+        logEvent('http', 'Opportunity not found', { id });
+        return res.status(404).json({ error: 'Opportunity not found' });
+      }
+
+      const currentStatus = opportunity.status?.toLowerCase();
+      
+      // Validate status transitions
+      const isValidTransition = (() => {
+        switch (currentStatus) {
+          case 'in review':
+            return ['public', 'rejected'].includes(newStatus);
+          case 'public':
+            return newStatus === 'private';
+          case 'private':
+            return false; // Cannot change from private
+          case 'rejected':
+            return newStatus === 'in review'; // Allow transition from rejected to in review
+          default:
+            return false;
+        }
+      })();
+
+      if (!isValidTransition) {
+        logEvent('http', 'Invalid status transition', { 
+          currentStatus,
+          newStatus 
+        });
+        return res.status(400).json({ 
+          error: `Cannot change status from '${currentStatus}' to '${newStatus}'`,
+          allowedTransitions: {
+            'in review': ['public', 'rejected'],
+            'public': ['private'],
+            'private': [],
+            'rejected': ['in review']
+          }
+        });
+      }
+
+      // Update the status
+      const result = await db.collection(MONGODB_COLLECTION_NAME)
+        .updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: newStatus } }
+        );
+
+      if (result.modifiedCount === 0) {
+        logEvent('http', 'No changes made to opportunity', { id });
+        return res.status(304).end();
+      }
+
+      logEvent('http', 'Successfully updated opportunity status', { 
+        id,
+        previousStatus: currentStatus,
+        newStatus 
+      });
+
+      res.json({ 
+        message: 'Status updated successfully',
+        previousStatus: currentStatus,
+        currentStatus: newStatus
+      });
+    } catch (error) {
+      if (error.message.includes('ObjectId')) {
+        logEvent('http', 'Invalid ID format', { id: req.params.id });
+        return res.status(400).json({ error: 'Invalid ID format' });
+      }
+      
+      logEvent('error', 'Error updating opportunity status', { 
+        error: error.message,
+        stack: error.stack 
+      });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // Error handling middleware
   app.use((err, req, res, next) => {
     logEvent('error', 'Unhandled error', { 
