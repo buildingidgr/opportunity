@@ -1,11 +1,17 @@
 import amqp from 'amqplib';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
+import express from 'express';
 
 // Configuration
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
 const MONGODB_URL = process.env.MONGODB_URL || 'mongodb://localhost:27017';
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'opportunities_db';
 const MONGODB_COLLECTION_NAME = process.env.MONGODB_COLLECTION_NAME || 'opportunities';
+const PORT = process.env.PORT || 3000;
+
+// Create Express app
+const app = express();
+app.use(express.json());
 
 // Helper function for structured logging
 function logEvent(stage, message, data = null) {
@@ -17,6 +23,73 @@ function logEvent(stage, message, data = null) {
     ...(data && { data })
   };
   console.log(JSON.stringify(logEntry));
+}
+
+async function setupHttpServer(db) {
+  // Health check endpoint for Railway
+  app.get('/', (req, res) => {
+    res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  });
+
+  // GET endpoint to fetch opportunity by ID
+  app.get('/opportunities/:id', async (req, res) => {
+    try {
+      const id = req.params.id;
+      logEvent('http', 'Fetching opportunity by ID', { id });
+
+      const opportunity = await db.collection(MONGODB_COLLECTION_NAME)
+        .findOne({ _id: new ObjectId(id) });
+
+      if (!opportunity) {
+        logEvent('http', 'Opportunity not found', { id });
+        return res.status(404).json({ error: 'Opportunity not found' });
+      }
+
+      logEvent('http', 'Successfully fetched opportunity', { id });
+      res.json(opportunity);
+    } catch (error) {
+      if (error.message.includes('ObjectId')) {
+        logEvent('http', 'Invalid ID format', { id: req.params.id });
+        return res.status(400).json({ error: 'Invalid ID format' });
+      }
+      
+      logEvent('error', 'Error fetching opportunity', { 
+        error: error.message,
+        stack: error.stack 
+      });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // Error handling middleware
+  app.use((err, req, res, next) => {
+    logEvent('error', 'Unhandled error', { 
+      error: err.message,
+      stack: err.stack 
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  });
+
+  // Handle graceful shutdown
+  const gracefulShutdown = async () => {
+    logEvent('shutdown', 'Received shutdown signal');
+    // Wait for existing requests to complete (adjust timeout as needed)
+    server.close(() => {
+      logEvent('shutdown', 'HTTP server closed');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
+
+  // Start HTTP server
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    logEvent('startup', 'HTTP server is running', { 
+      port: PORT,
+      environment: process.env.NODE_ENV || 'development'
+    });
+  });
 }
 
 async function start() {
@@ -37,6 +110,9 @@ async function start() {
     await client.connect();
     db = client.db(MONGODB_DB_NAME);
     logEvent('mongodb', 'Successfully connected to MongoDB');
+
+    // Setup HTTP server
+    await setupHttpServer(db);
 
     // Ensure the queue exists
     logEvent('rabbitmq', 'Asserting queue existence', { queue: 'opportunity' });
