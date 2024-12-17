@@ -61,6 +61,77 @@ async function setupHttpServer(db) {
     }
   });
 
+  // GET endpoint to fetch public opportunities with pagination and category filter
+  app.get('/opportunities', async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const category = req.query.category;
+
+      // Validate pagination parameters
+      if (page < 1 || limit < 1 || limit > 50) {
+        return res.status(400).json({
+          error: 'Invalid pagination parameters. Page must be >= 1 and limit must be between 1 and 50'
+        });
+      }
+
+      // Build query
+      const query = { status: 'public' };
+      if (category) {
+        query.category = category;
+      }
+
+      logEvent('http', 'Fetching public opportunities', { 
+        page,
+        limit,
+        category: category || 'all'
+      });
+
+      // Get total count for pagination
+      const totalCount = await db.collection(MONGODB_COLLECTION_NAME)
+        .countDocuments(query);
+
+      // Calculate pagination values
+      const totalPages = Math.ceil(totalCount / limit);
+      const skip = (page - 1) * limit;
+
+      // Fetch opportunities
+      const opportunities = await db.collection(MONGODB_COLLECTION_NAME)
+        .find(query)
+        .sort({ _id: -1 }) // Sort by newest first
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      logEvent('http', 'Successfully fetched public opportunities', { 
+        count: opportunities.length,
+        page,
+        totalPages
+      });
+
+      res.json({
+        opportunities,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems: totalCount,
+          itemsPerPage: limit,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1
+        },
+        filter: {
+          category: category || 'all'
+        }
+      });
+    } catch (error) {
+      logEvent('error', 'Error fetching public opportunities', { 
+        error: error.message,
+        stack: error.stack 
+      });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // PATCH endpoint to update opportunity status
   app.patch('/opportunities/:id/status', async (req, res) => {
     try {
