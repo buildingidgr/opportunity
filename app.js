@@ -40,40 +40,114 @@ async function validateToken(req, res, next) {
     const token = authHeader.split(' ')[1];
     
     try {
-      // Validate token with auth service
-      const response = await axios.post(`${AUTH_SERVICE_URL}/v1/token/validate`, { token }, {
-        headers: { 'Content-Type': 'application/json' }
+      // Log the full token for debugging (be careful with this in production)
+      logEvent('auth', 'Attempting to validate token with auth service', {
+        url: `${AUTH_SERVICE_URL}/validate`,  // Changed endpoint
+        token: token.substring(0, 10) + '...' // Log first 10 chars of token
       });
 
-      if (response.data.valid) {
+      // Validate token with auth service
+      const response = await axios.post(
+        `${AUTH_SERVICE_URL}/validate`,  // Changed endpoint
+        { token }, 
+        {
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}` // Also send token in headers
+          },
+          timeout: 5000 // 5 second timeout
+        }
+      );
+
+      logEvent('auth', 'Received response from auth service', {
+        status: response.status,
+        statusText: response.statusText,
+        hasData: !!response.data,
+        responseData: response.data // Log the full response for debugging
+      });
+
+      // Check if the response indicates a valid token
+      if (response.data && (response.data.valid || response.status === 200)) {
         // Add user info to request object
         req.user = {
-          id: response.data.userId,
-          ...response.data.userData
+          id: response.data.userId || response.data.sub || response.data.id,
+          ...response.data
         };
-        logEvent('auth', 'Token validated successfully', { userId: req.user.id });
+        logEvent('auth', 'Token validated successfully', { 
+          userId: req.user.id,
+          userData: req.user
+        });
         next();
       } else {
-        logEvent('auth', 'Invalid token', { token: '***' });
-        res.status(401).json({ error: 'Invalid token' });
+        logEvent('auth', 'Token validation failed', { 
+          token: token.substring(0, 10) + '...',
+          response: response.data
+        });
+        res.status(401).json({ 
+          error: 'Invalid token',
+          details: response.data?.message || 'Token validation failed',
+          hint: 'Please ensure you are using a valid token and the correct authorization header format'
+        });
       }
     } catch (error) {
       logEvent('auth', 'Error validating token with auth service', {
-        error: error.message
+        error: error.message,
+        code: error.code,
+        response: {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data
+        },
+        request: {
+          method: error.config?.method,
+          url: error.config?.url,
+          headers: {
+            ...error.config?.headers,
+            'Authorization': 'Bearer [REDACTED]'
+          }
+        },
+        authServiceUrl: AUTH_SERVICE_URL
       });
       
+      if (error.code === 'ECONNREFUSED') {
+        return res.status(503).json({ 
+          error: 'Auth service is unavailable',
+          details: 'Could not connect to authentication service',
+          authServiceUrl: AUTH_SERVICE_URL // Include URL for debugging
+        });
+      }
+
+      if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+        return res.status(503).json({ 
+          error: 'Auth service timeout',
+          details: 'Authentication service took too long to respond'
+        });
+      }
+
       if (error.response?.status === 401) {
-        return res.status(401).json({ error: 'Invalid token' });
+        return res.status(401).json({ 
+          error: 'Invalid token',
+          details: error.response.data?.message || 'Token validation failed',
+          hint: 'Please check if your token is valid and not expired'
+        });
       }
       
-      res.status(500).json({ error: 'Error validating token' });
+      res.status(500).json({ 
+        error: 'Error validating token',
+        details: 'An unexpected error occurred while validating your token',
+        hint: 'Please ensure the AUTH_SERVICE_URL environment variable is correctly set'
+      });
     }
   } catch (error) {
     logEvent('auth', 'Unexpected error in token validation', {
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
+      authServiceUrl: AUTH_SERVICE_URL
     });
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: 'An unexpected error occurred in the authentication process'
+    });
   }
 }
 
