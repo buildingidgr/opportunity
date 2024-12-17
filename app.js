@@ -242,54 +242,33 @@ async function setupHttpServer(db) {
 
       // Mask sensitive data in opportunities
       const maskedOpportunities = opportunities.map(opportunity => {
-        // Create a copy of the opportunity to avoid modifying the original
-        const maskedOpp = { ...opportunity };
+        // Create a deep copy of the opportunity to avoid modifying the original
+        const maskedOpp = JSON.parse(JSON.stringify(opportunity));
 
-        // Mask address fields
-        if (maskedOpp.address) {
-          maskedOpp.address = 'Generated random address';
-        }
-        if (maskedOpp.streetAddress) {
-          maskedOpp.streetAddress = 'Generated random address';
-        }
-        if (maskedOpp.city) {
-          maskedOpp.city = 'Generated random address';
-        }
-        if (maskedOpp.state) {
-          maskedOpp.state = 'Generated random address';
-        }
-        if (maskedOpp.country) {
-          maskedOpp.country = 'Generated random address';
-        }
-        if (maskedOpp.postalCode) {
-          maskedOpp.postalCode = 'Generated random address';
+        // Handle nested data structure
+        if (maskedOpp.data && maskedOpp.data.project) {
+          // Mask location data
+          if (maskedOpp.data.project.location) {
+            maskedOpp.data.project.location = {
+              address: 'Generated random address',
+              coordinates: {
+                lat: 0,
+                lng: 0
+              }
+            };
+          }
         }
 
         // Mask contact information
-        if (maskedOpp.contact) {
-          maskedOpp.contact = {
-            ...maskedOpp.contact,
-            name: 'Generated random name',
+        if (maskedOpp.data && maskedOpp.data.contact) {
+          maskedOpp.data.contact = {
+            fullName: 'Generated random name',
             email: 'Generated random email',
-            phone: 'Generated random phone'
+            phone: {
+              countryCode: '+00',
+              number: 'Generated random phone'
+            }
           };
-        }
-
-        // Handle nested contact fields if they exist at root level
-        if (maskedOpp.contactName) {
-          maskedOpp.contactName = 'Generated random name';
-        }
-        if (maskedOpp.contactEmail) {
-          maskedOpp.contactEmail = 'Generated random email';
-        }
-        if (maskedOpp.contactPhone) {
-          maskedOpp.contactPhone = 'Generated random phone';
-        }
-        if (maskedOpp.email) {
-          maskedOpp.email = 'Generated random email';
-        }
-        if (maskedOpp.phone) {
-          maskedOpp.phone = 'Generated random phone';
         }
 
         return maskedOpp;
