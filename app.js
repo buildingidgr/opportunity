@@ -1,6 +1,7 @@
 import amqp from 'amqplib';
 import { MongoClient, ObjectId } from 'mongodb';
 import express from 'express';
+import axios from 'axios';
 
 // Configuration
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
@@ -8,6 +9,7 @@ const MONGODB_URL = process.env.MONGODB_URL || 'mongodb://localhost:27017';
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'opportunities_db';
 const MONGODB_COLLECTION_NAME = process.env.MONGODB_COLLECTION_NAME || 'opportunities';
 const PORT = process.env.PORT || 3000;
+const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service-url';
 
 // Create Express app
 const app = express();
@@ -25,14 +27,64 @@ function logEvent(stage, message, data = null) {
   console.log(JSON.stringify(logEntry));
 }
 
+// JWT validation middleware
+async function validateToken(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      logEvent('auth', 'Missing or invalid authorization header');
+      return res.status(401).json({ error: 'Authorization header missing or invalid' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    
+    try {
+      // Validate token with auth service
+      const response = await axios.post(`${AUTH_SERVICE_URL}/validate-token`, { token }, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (response.data.valid) {
+        // Add user info to request object
+        req.user = {
+          id: response.data.userId,
+          ...response.data.userData
+        };
+        logEvent('auth', 'Token validated successfully', { userId: req.user.id });
+        next();
+      } else {
+        logEvent('auth', 'Invalid token', { token: '***' });
+        res.status(401).json({ error: 'Invalid token' });
+      }
+    } catch (error) {
+      logEvent('auth', 'Error validating token with auth service', {
+        error: error.message
+      });
+      
+      if (error.response?.status === 401) {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+      
+      res.status(500).json({ error: 'Error validating token' });
+    }
+  } catch (error) {
+    logEvent('auth', 'Unexpected error in token validation', {
+      error: error.message,
+      stack: error.stack
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 async function setupHttpServer(db) {
-  // Health check endpoint for Railway
+  // Health check endpoint for Railway - no auth required
   app.get('/', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
   });
 
-  // GET endpoint to fetch opportunity by ID
-  app.get('/opportunities/:id', async (req, res) => {
+  // Protected routes - require valid JWT
+  app.get('/opportunities/:id', validateToken, async (req, res) => {
     try {
       const id = req.params.id;
       logEvent('http', 'Fetching opportunity by ID', { id });
@@ -61,8 +113,7 @@ async function setupHttpServer(db) {
     }
   });
 
-  // GET endpoint to fetch public opportunities with pagination and category filter
-  app.get('/opportunities', async (req, res) => {
+  app.get('/opportunities', validateToken, async (req, res) => {
     try {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 10;
@@ -156,8 +207,7 @@ async function setupHttpServer(db) {
     }
   });
 
-  // PATCH endpoint to update opportunity status
-  app.patch('/opportunities/:id/status', async (req, res) => {
+  app.patch('/opportunities/:id/status', validateToken, async (req, res) => {
     try {
       const id = req.params.id;
       const newStatus = req.body.status?.toLowerCase();
