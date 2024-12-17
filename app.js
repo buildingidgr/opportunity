@@ -63,6 +63,13 @@ async function start() {
             opportunityId: opportunityData.id || 'unknown'
           });
 
+          // Add status field
+          opportunityData.status = 'in review';
+          logEvent('processing', 'Added status field to opportunity data', {
+            messageId,
+            status: opportunityData.status
+          });
+
           // Store in MongoDB
           logEvent('mongodb', 'Attempting to store data', { messageId });
           const result = await db.collection(MONGODB_COLLECTION_NAME).insertOne(opportunityData);
