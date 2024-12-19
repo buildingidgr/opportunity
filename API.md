@@ -77,7 +77,13 @@ Retrieves a paginated list of public opportunities with masked sensitive data.
                     "version": "1.0.0"
                 }
             },
-            "status": "public"
+            "status": "public",
+            "lastStatusChange": {
+                "from": "in review",
+                "to": "public",
+                "changedBy": "user-123",
+                "changedAt": "2023-12-20T15:30:45.123Z"
+            }
         }
     ],
     "pagination": {
@@ -113,9 +119,23 @@ Retrieves a specific opportunity by ID.
     "_id": "6761e3f3a2bf30a81b20906e",
     "type": "opportunity.created",
     "data": {
-        // Full opportunity data
+        // Opportunity data
     },
-    "status": "public"
+    "status": "public",
+    "lastStatusChange": {
+        "from": "in review",
+        "to": "public",
+        "changedBy": "user-123",
+        "changedAt": "2023-12-20T15:30:45.123Z"
+    },
+    "statusHistory": [
+        {
+            "from": "in review",
+            "to": "public",
+            "changedBy": "user-123",
+            "changedAt": "2023-12-20T15:30:45.123Z"
+        }
+    ]
 }
 ```
 
@@ -146,8 +166,12 @@ Updates the status of an opportunity.
 ```json
 {
     "message": "Status updated successfully",
-    "previousStatus": "in review",
-    "currentStatus": "public"
+    "statusChange": {
+        "previousStatus": "in review",
+        "newStatus": "public",
+        "changedBy": "user-123",
+        "changedAt": "2023-12-20T15:30:45.123Z"
+    }
 }
 ```
 
@@ -196,4 +220,12 @@ For public opportunities, the following fields are masked:
 3. Contact information:
    - Name: "Generated random name"
    - Email: "Generated random email"
-   - Phone: "Generated random phone" 
+   - Phone: "Generated random phone"
+
+## Status Change Tracking
+Every status change is tracked with:
+1. Previous status
+2. New status
+3. User ID who made the change
+4. Timestamp of the change
+5. Complete history of all status changes

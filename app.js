@@ -354,10 +354,12 @@ async function setupHttpServer(db) {
     try {
       const id = req.params.id;
       const newStatus = req.body.status?.toLowerCase();
+      const userId = req.user.id; // Get user ID from the validated token
       
       logEvent('http', 'Attempting to update opportunity status', { 
         id,
-        newStatus 
+        newStatus,
+        userId 
       });
 
       // Validate status value
@@ -412,11 +414,27 @@ async function setupHttpServer(db) {
         });
       }
 
-      // Update the status
+      // Create status change history entry
+      const statusChange = {
+        from: currentStatus,
+        to: newStatus,
+        changedBy: userId,
+        changedAt: new Date(),
+      };
+
+      // Update the status and add to history
       const result = await db.collection(MONGODB_COLLECTION_NAME)
         .updateOne(
           { _id: new ObjectId(id) },
-          { $set: { status: newStatus } }
+          { 
+            $set: { 
+              status: newStatus,
+              lastStatusChange: statusChange
+            },
+            $push: { 
+              statusHistory: statusChange
+            }
+          }
         );
 
       if (result.modifiedCount === 0) {
@@ -426,14 +444,17 @@ async function setupHttpServer(db) {
 
       logEvent('http', 'Successfully updated opportunity status', { 
         id,
-        previousStatus: currentStatus,
-        newStatus 
+        statusChange
       });
 
       res.json({ 
         message: 'Status updated successfully',
-        previousStatus: currentStatus,
-        currentStatus: newStatus
+        statusChange: {
+          previousStatus: currentStatus,
+          newStatus: newStatus,
+          changedBy: userId,
+          changedAt: statusChange.changedAt
+        }
       });
     } catch (error) {
       if (error.message.includes('ObjectId')) {
