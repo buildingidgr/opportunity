@@ -175,6 +175,72 @@ Updates the status of an opportunity.
 }
 ```
 
+### 5. Get My Changed Opportunities
+```
+GET /opportunities/my-changes
+```
+
+Retrieves a paginated list of opportunities where the authenticated user has made status changes.
+
+**Query Parameters**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 10, max: 50)
+
+**Response (200 OK)**
+```json
+{
+    "opportunities": [
+        {
+            "_id": "6761e3f3a2bf30a81b20906e",
+            "type": "opportunity.created",
+            "data": {
+                // Opportunity data
+            },
+            "currentStatus": "public",
+            "myChanges": [
+                {
+                    "from": "in review",
+                    "to": "public",
+                    "changedAt": "2023-12-20T15:30:45.123Z"
+                },
+                {
+                    "from": "rejected",
+                    "to": "in review",
+                    "changedAt": "2023-12-19T10:15:30.456Z"
+                }
+            ],
+            "totalChanges": 5,
+            "myChangesCount": 2,
+            "lastChange": {
+                "from": "in review",
+                "to": "public",
+                "changedBy": "user_2prIb6NUsyTjopaWeWDjFW8jdGY",
+                "changedAt": "2023-12-20T15:30:45.123Z"
+            }
+        }
+    ],
+    "pagination": {
+        "currentPage": 1,
+        "totalPages": 5,
+        "totalItems": 48,
+        "itemsPerPage": 10,
+        "hasNextPage": true,
+        "hasPreviousPage": false
+    },
+    "summary": {
+        "totalOpportunities": 48,
+        "totalChanges": 96
+    }
+}
+```
+
+**Features**:
+1. Returns only opportunities where the user has made status changes
+2. Shows history of changes made by the user
+3. Includes total number of changes vs user's changes
+4. Sorted by most recent change first
+5. Provides summary statistics
+
 ## Error Responses
 
 ### 400 Bad Request

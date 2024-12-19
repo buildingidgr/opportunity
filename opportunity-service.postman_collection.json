@@ -305,6 +305,98 @@
 					}
 				}
 			]
+		},
+		{
+			"name": "Get My Changed Opportunities",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{auth_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/opportunities/my-changes?page=1&limit=10",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"opportunities",
+						"my-changes"
+					],
+					"query": [
+						{
+							"key": "page",
+							"value": "1",
+							"description": "Page number"
+						},
+						{
+							"key": "limit",
+							"value": "10",
+							"description": "Items per page"
+						}
+					]
+				},
+				"description": "Get opportunities where the authenticated user has made status changes"
+			},
+			"response": [
+				{
+					"name": "Success",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/opportunities/my-changes"
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"body": {
+						"opportunities": [
+							{
+								"_id": "6761e3f3a2bf30a81b20906e",
+								"currentStatus": "public",
+								"myChanges": [
+									{
+										"from": "in review",
+										"to": "public",
+										"changedAt": "2023-12-20T15:30:45.123Z"
+									}
+								],
+								"totalChanges": 3,
+								"myChangesCount": 1,
+								"lastChange": {
+									"from": "in review",
+									"to": "public",
+									"changedBy": "user_2prIb6NUsyTjopaWeWDjFW8jdGY",
+									"changedAt": "2023-12-20T15:30:45.123Z"
+								}
+							}
+						],
+						"pagination": {
+							"currentPage": 1,
+							"totalPages": 5,
+							"totalItems": 48,
+							"itemsPerPage": 10,
+							"hasNextPage": true,
+							"hasPreviousPage": false
+						},
+						"summary": {
+							"totalOpportunities": 48,
+							"totalChanges": 96
+						}
+					}
+				}
+			]
 		}
 	],
 	"event": [

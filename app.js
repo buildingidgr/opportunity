@@ -452,6 +452,116 @@ async function setupHttpServer(db) {
     }
   });
 
+  app.get('/opportunities/my-changes', validateToken, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const userId = req.user.id;
+
+      // Validate pagination parameters
+      if (page < 1 || limit < 1 || limit > 50) {
+        return res.status(400).json({
+          error: 'Invalid pagination parameters. Page must be >= 1 and limit must be between 1 and 50'
+        });
+      }
+
+      logEvent('http', 'Fetching opportunities modified by user', { 
+        userId,
+        page,
+        limit
+      });
+
+      // Query for opportunities where the user has made status changes
+      const query = {
+        'statusHistory': {
+          $elemMatch: {
+            'changedBy': userId
+          }
+        }
+      };
+
+      // Get total count for pagination
+      const totalCount = await db.collection(MONGODB_COLLECTION_NAME)
+        .countDocuments(query);
+
+      // Calculate pagination values
+      const totalPages = Math.ceil(totalCount / limit);
+
+      // Validate requested page number
+      if (page > totalPages && totalCount > 0) {
+        return res.status(400).json({
+          error: `Page ${page} does not exist. Total pages available: ${totalPages}`,
+          totalItems: totalCount,
+          totalPages: totalPages,
+          suggestion: `Try accessing page 1 to ${totalPages}`
+        });
+      }
+
+      const skip = (page - 1) * limit;
+
+      // Fetch opportunities
+      const opportunities = await db.collection(MONGODB_COLLECTION_NAME)
+        .find(query)
+        .sort({ 'lastStatusChange.changedAt': -1 }) // Sort by most recent change
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      // Process each opportunity to highlight user's changes
+      const processedOpportunities = opportunities.map(opportunity => {
+        // Filter status history to only show this user's changes
+        const userChanges = opportunity.statusHistory.filter(
+          change => change.changedBy === userId
+        );
+
+        return {
+          _id: opportunity._id,
+          type: opportunity.type,
+          data: opportunity.data,
+          currentStatus: opportunity.status,
+          myChanges: userChanges.map(change => ({
+            from: change.from,
+            to: change.to,
+            changedAt: change.changedAt
+          })),
+          totalChanges: opportunity.statusHistory.length,
+          myChangesCount: userChanges.length,
+          lastChange: opportunity.lastStatusChange
+        };
+      });
+
+      logEvent('http', 'Successfully fetched user modified opportunities', { 
+        count: opportunities.length,
+        page,
+        totalPages,
+        userId
+      });
+
+      res.json({
+        opportunities: processedOpportunities,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems: totalCount,
+          itemsPerPage: limit,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1
+        },
+        summary: {
+          totalOpportunities: totalCount,
+          totalChanges: processedOpportunities.reduce((sum, opp) => sum + opp.myChangesCount, 0)
+        }
+      });
+    } catch (error) {
+      logEvent('error', 'Error fetching user modified opportunities', { 
+        error: error.message,
+        stack: error.stack,
+        userId: req.user.id
+      });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // Error handling middleware
   app.use((err, req, res, next) => {
     logEvent('error', 'Unhandled error', { 
