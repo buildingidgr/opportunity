@@ -172,6 +172,228 @@ async function setupHttpServer(db) {
   });
 
   // Protected routes - require valid JWT
+  app.get('/opportunities/my-changes', validateToken, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const userId = req.user.id;
+
+      logEvent('http', 'Starting my-changes request', { 
+        userId,
+        page,
+        limit,
+        query: req.query
+      });
+
+      // Validate pagination parameters
+      if (page < 1 || limit < 1 || limit > 50) {
+        logEvent('http', 'Invalid pagination parameters', {
+          page,
+          limit,
+          userId
+        });
+        return res.status(400).json({
+          error: 'Invalid pagination parameters. Page must be >= 1 and limit must be between 1 and 50'
+        });
+      }
+
+      // Query for opportunities where the user has made status changes
+      const query = {
+        'statusHistory': {
+          $elemMatch: {
+            'changedBy': userId
+          }
+        }
+      };
+
+      logEvent('mongodb', 'Starting my-changes query', { 
+        userId,
+        userIdType: typeof userId,
+        userIdLength: userId.length,
+        query: JSON.stringify(query)
+      });
+
+      try {
+        // Get total count for pagination
+        const totalCount = await db.collection(MONGODB_COLLECTION_NAME)
+          .countDocuments(query);
+
+        logEvent('mongodb', 'Count query result', { 
+          totalCount,
+          userId,
+          query: JSON.stringify(query),
+          collection: MONGODB_COLLECTION_NAME
+        });
+
+        // Calculate pagination values
+        const totalPages = Math.ceil(totalCount / limit);
+        const skip = (page - 1) * limit;
+
+        logEvent('mongodb', 'Pagination values calculated', { 
+          totalCount,
+          totalPages,
+          skip,
+          limit
+        });
+
+        // Validate requested page number
+        if (page > totalPages && totalCount > 0) {
+          logEvent('http', 'Page number exceeds total pages', {
+            requestedPage: page,
+            totalPages,
+            totalCount
+          });
+          return res.status(400).json({
+            error: `Page ${page} does not exist. Total pages available: ${totalPages}`,
+            totalItems: totalCount,
+            totalPages: totalPages,
+            suggestion: `Try accessing page 1 to ${totalPages}`
+          });
+        }
+
+        // Fetch opportunities
+        logEvent('mongodb', 'Fetching opportunities', { 
+          query: JSON.stringify(query),
+          skip,
+          limit,
+          sort: { 'lastStatusChange.changedAt': -1 }
+        });
+
+        const opportunities = await db.collection(MONGODB_COLLECTION_NAME)
+          .find(query)
+          .sort({ 'lastStatusChange.changedAt': -1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        logEvent('mongodb', 'Opportunities fetched', { 
+          count: opportunities.length,
+          opportunityIds: opportunities.map(o => o._id?.toString())
+        });
+
+        if (!opportunities || opportunities.length === 0) {
+          logEvent('http', 'No opportunities found', { userId });
+          return res.json({
+            opportunities: [],
+            pagination: {
+              currentPage: page,
+              totalPages: 0,
+              totalItems: 0,
+              itemsPerPage: limit,
+              hasNextPage: false,
+              hasPreviousPage: false
+            },
+            summary: {
+              totalOpportunities: 0,
+              totalChanges: 0
+            }
+          });
+        }
+
+        // Process each opportunity to highlight user's changes
+        const processedOpportunities = opportunities.map(opportunity => {
+          try {
+            const userChanges = opportunity.statusHistory?.filter(
+              change => change.changedBy === userId
+            ) || [];
+
+            logEvent('processing', 'Processing opportunity', { 
+              opportunityId: opportunity._id?.toString(),
+              totalStatusChanges: opportunity.statusHistory?.length || 0,
+              userChangesCount: userChanges.length,
+              hasStatusHistory: !!opportunity.statusHistory,
+              currentStatus: opportunity.status
+            });
+
+            return {
+              _id: opportunity._id,
+              type: opportunity.type || 'unknown',
+              data: opportunity.data || {},
+              currentStatus: opportunity.status || 'unknown',
+              myChanges: userChanges.map(change => ({
+                from: change.from || 'unknown',
+                to: change.to || 'unknown',
+                changedAt: change.changedAt || new Date()
+              })),
+              totalChanges: opportunity.statusHistory?.length || 0,
+              myChangesCount: userChanges.length,
+              lastChange: opportunity.lastStatusChange || null
+            };
+          } catch (err) {
+            logEvent('error', 'Error processing individual opportunity', {
+              opportunityId: opportunity._id?.toString(),
+              error: err.message
+            });
+            return null;
+          }
+        }).filter(Boolean); // Remove any null entries from processing errors
+
+        logEvent('http', 'Successfully processed opportunities', { 
+          totalProcessed: processedOpportunities.length,
+          totalOriginal: opportunities.length,
+          page,
+          totalPages,
+          userId
+        });
+
+        const response = {
+          opportunities: processedOpportunities,
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalItems: totalCount,
+            itemsPerPage: limit,
+            hasNextPage: page < totalPages,
+            hasPreviousPage: page > 1
+          },
+          summary: {
+            totalOpportunities: totalCount,
+            totalChanges: processedOpportunities.reduce((sum, opp) => sum + opp.myChangesCount, 0)
+          }
+        };
+
+        logEvent('http', 'Sending response', { 
+          opportunityCount: processedOpportunities.length,
+          totalPages,
+          currentPage: page,
+          totalItems: totalCount
+        });
+
+        res.json(response);
+      } catch (dbError) {
+        logEvent('error', 'Database operation failed', {
+          error: dbError.message,
+          operation: dbError.operation,
+          code: dbError.code
+        });
+        throw dbError;
+      }
+    } catch (error) {
+      logEvent('error', 'Error in my-changes endpoint', { 
+        error: error.message,
+        stack: error.stack,
+        userId: req.user.id,
+        query: req.query,
+        errorName: error.name,
+        errorCode: error.code
+      });
+      
+      // Handle specific error types
+      if (error.name === 'BSONError' || error.name === 'BSONTypeError') {
+        return res.status(400).json({ 
+          error: 'Invalid ID format',
+          details: 'One or more document IDs are in an invalid format'
+        });
+      }
+      
+      res.status(500).json({ 
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  });
+
+  // Protected routes - require valid JWT
   app.get('/opportunities/:id', validateToken, async (req, res) => {
     try {
       const id = req.params.id;
@@ -449,227 +671,6 @@ async function setupHttpServer(db) {
         stack: error.stack 
       });
       res.status(500).json({ error: 'Internal server error' });
-    }
-  });
-
-  app.get('/opportunities/my-changes', validateToken, async (req, res) => {
-    try {
-      const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
-      const userId = req.user.id;
-
-      logEvent('http', 'Starting my-changes request', { 
-        userId,
-        page,
-        limit,
-        query: req.query
-      });
-
-      // Validate pagination parameters
-      if (page < 1 || limit < 1 || limit > 50) {
-        logEvent('http', 'Invalid pagination parameters', {
-          page,
-          limit,
-          userId
-        });
-        return res.status(400).json({
-          error: 'Invalid pagination parameters. Page must be >= 1 and limit must be between 1 and 50'
-        });
-      }
-
-      // Query for opportunities where the user has made status changes
-      const query = {
-        'statusHistory': {
-          $elemMatch: {
-            'changedBy': userId
-          }
-        }
-      };
-
-      logEvent('mongodb', 'Starting my-changes query', { 
-        userId,
-        userIdType: typeof userId,
-        userIdLength: userId.length,
-        query: JSON.stringify(query)
-      });
-
-      try {
-        // Get total count for pagination
-        const totalCount = await db.collection(MONGODB_COLLECTION_NAME)
-          .countDocuments(query);
-
-        logEvent('mongodb', 'Count query result', { 
-          totalCount,
-          userId,
-          query: JSON.stringify(query),
-          collection: MONGODB_COLLECTION_NAME
-        });
-
-        // Calculate pagination values
-        const totalPages = Math.ceil(totalCount / limit);
-        const skip = (page - 1) * limit;
-
-        logEvent('mongodb', 'Pagination values calculated', { 
-          totalCount,
-          totalPages,
-          skip,
-          limit
-        });
-
-        // Validate requested page number
-        if (page > totalPages && totalCount > 0) {
-          logEvent('http', 'Page number exceeds total pages', {
-            requestedPage: page,
-            totalPages,
-            totalCount
-          });
-          return res.status(400).json({
-            error: `Page ${page} does not exist. Total pages available: ${totalPages}`,
-            totalItems: totalCount,
-            totalPages: totalPages,
-            suggestion: `Try accessing page 1 to ${totalPages}`
-          });
-        }
-
-        // Fetch opportunities
-        logEvent('mongodb', 'Fetching opportunities', { 
-          query: JSON.stringify(query),
-          skip,
-          limit,
-          sort: { 'lastStatusChange.changedAt': -1 }
-        });
-
-        const opportunities = await db.collection(MONGODB_COLLECTION_NAME)
-          .find(query)
-          .sort({ 'lastStatusChange.changedAt': -1 })
-          .skip(skip)
-          .limit(limit)
-          .toArray();
-
-        logEvent('mongodb', 'Opportunities fetched', { 
-          count: opportunities.length,
-          opportunityIds: opportunities.map(o => o._id?.toString())
-        });
-
-        if (!opportunities || opportunities.length === 0) {
-          logEvent('http', 'No opportunities found', { userId });
-          return res.json({
-            opportunities: [],
-            pagination: {
-              currentPage: page,
-              totalPages: 0,
-              totalItems: 0,
-              itemsPerPage: limit,
-              hasNextPage: false,
-              hasPreviousPage: false
-            },
-            summary: {
-              totalOpportunities: 0,
-              totalChanges: 0
-            }
-          });
-        }
-
-        // Process each opportunity to highlight user's changes
-        const processedOpportunities = opportunities.map(opportunity => {
-          try {
-            const userChanges = opportunity.statusHistory?.filter(
-              change => change.changedBy === userId
-            ) || [];
-
-            logEvent('processing', 'Processing opportunity', { 
-              opportunityId: opportunity._id?.toString(),
-              totalStatusChanges: opportunity.statusHistory?.length || 0,
-              userChangesCount: userChanges.length,
-              hasStatusHistory: !!opportunity.statusHistory,
-              currentStatus: opportunity.status
-            });
-
-            return {
-              _id: opportunity._id,
-              type: opportunity.type || 'unknown',
-              data: opportunity.data || {},
-              currentStatus: opportunity.status || 'unknown',
-              myChanges: userChanges.map(change => ({
-                from: change.from || 'unknown',
-                to: change.to || 'unknown',
-                changedAt: change.changedAt || new Date()
-              })),
-              totalChanges: opportunity.statusHistory?.length || 0,
-              myChangesCount: userChanges.length,
-              lastChange: opportunity.lastStatusChange || null
-            };
-          } catch (err) {
-            logEvent('error', 'Error processing individual opportunity', {
-              opportunityId: opportunity._id?.toString(),
-              error: err.message
-            });
-            return null;
-          }
-        }).filter(Boolean); // Remove any null entries from processing errors
-
-        logEvent('http', 'Successfully processed opportunities', { 
-          totalProcessed: processedOpportunities.length,
-          totalOriginal: opportunities.length,
-          page,
-          totalPages,
-          userId
-        });
-
-        const response = {
-          opportunities: processedOpportunities,
-          pagination: {
-            currentPage: page,
-            totalPages,
-            totalItems: totalCount,
-            itemsPerPage: limit,
-            hasNextPage: page < totalPages,
-            hasPreviousPage: page > 1
-          },
-          summary: {
-            totalOpportunities: totalCount,
-            totalChanges: processedOpportunities.reduce((sum, opp) => sum + opp.myChangesCount, 0)
-          }
-        };
-
-        logEvent('http', 'Sending response', { 
-          opportunityCount: processedOpportunities.length,
-          totalPages,
-          currentPage: page,
-          totalItems: totalCount
-        });
-
-        res.json(response);
-      } catch (dbError) {
-        logEvent('error', 'Database operation failed', {
-          error: dbError.message,
-          operation: dbError.operation,
-          code: dbError.code
-        });
-        throw dbError;
-      }
-    } catch (error) {
-      logEvent('error', 'Error in my-changes endpoint', { 
-        error: error.message,
-        stack: error.stack,
-        userId: req.user.id,
-        query: req.query,
-        errorName: error.name,
-        errorCode: error.code
-      });
-      
-      // Handle specific error types
-      if (error.name === 'BSONError' || error.name === 'BSONTypeError') {
-        return res.status(400).json({ 
-          error: 'Invalid ID format',
-          details: 'One or more document IDs are in an invalid format'
-        });
-      }
-      
-      res.status(500).json({ 
-        error: 'Internal server error',
-        details: error.message
-      });
     }
   });
 
