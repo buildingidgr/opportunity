@@ -724,6 +724,29 @@ async function start() {
     db = client.db(MONGODB_DB_NAME);
     logEvent('mongodb', 'Successfully connected to MongoDB');
 
+    // Create indexes
+    logEvent('mongodb', 'Creating indexes');
+    await db.collection(MONGODB_COLLECTION_NAME).createIndex(
+      { 'statusHistory.changedBy': 1 },
+      { 
+        name: 'statusHistory_changedBy',
+        background: true
+      }
+    );
+    
+    // Add compound index for sorting
+    await db.collection(MONGODB_COLLECTION_NAME).createIndex(
+      { 
+        'statusHistory.changedBy': 1,
+        'lastStatusChange.changedAt': -1 
+      },
+      { 
+        name: 'statusHistory_changedBy_lastChange',
+        background: true
+      }
+    );
+    logEvent('mongodb', 'Indexes created successfully');
+
     // Setup HTTP server
     await setupHttpServer(db);
 
