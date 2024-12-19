@@ -2,6 +2,7 @@ import amqp from 'amqplib';
 import { MongoClient, ObjectId } from 'mongodb';
 import express from 'express';
 import axios from 'axios';
+import jwt from 'jsonwebtoken';
 
 // Configuration
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
@@ -59,6 +60,25 @@ function logEvent(stage, message, data = null) {
   console.log(JSON.stringify(logEntry));
 }
 
+// Helper function to extract user ID from JWT token
+function extractUserIdFromToken(token) {
+  try {
+    // Decode the token without verifying (we rely on auth service for validation)
+    const decoded = jwt.decode(token);
+    
+    // Check common JWT claim fields for user ID
+    const userId = decoded?.sub || decoded?.userId || decoded?.id;
+    
+    if (!userId) {
+      throw new Error('User ID not found in token payload');
+    }
+    
+    return userId;
+  } catch (error) {
+    throw new Error(`Failed to extract user ID from token: ${error.message}`);
+  }
+}
+
 // JWT validation middleware
 async function validateToken(req, res, next) {
   try {
@@ -72,7 +92,9 @@ async function validateToken(req, res, next) {
     const token = authHeader.split(' ')[1];
     
     try {
-      // Log the full token for debugging (be careful with this in production)
+      // Extract user ID from token before validation
+      const userId = extractUserIdFromToken(token);
+      
       logEvent('auth', 'Attempting to validate token with auth service', {
         url: `${AUTH_SERVICE_URL}/v1/token/validate`,
         token: token.substring(0, 10) + '...' // Log first 10 chars of token
@@ -94,26 +116,24 @@ async function validateToken(req, res, next) {
       logEvent('auth', 'Received response from auth service', {
         status: response.status,
         statusText: response.statusText,
-        hasData: !!response.data,
-        responseData: response.data // Log the full response for debugging
+        hasData: !!response.data
       });
 
       // Check if the response indicates a valid token
       if (response.data && (response.data.valid || response.status === 200)) {
-        // Add user info to request object
+        // Add user info to request object using extracted ID
         req.user = {
-          id: response.data.userId || response.data.sub || response.data.id,
+          id: userId,
           ...response.data
         };
+        
         logEvent('auth', 'Token validated successfully', { 
-          userId: req.user.id,
-          userData: req.user
+          userId: req.user.id
         });
         next();
       } else {
         logEvent('auth', 'Token validation failed', { 
-          token: token.substring(0, 10) + '...',
-          response: response.data
+          token: token.substring(0, 10) + '...'
         });
         res.status(401).json({ 
           error: 'Invalid token',
@@ -122,6 +142,17 @@ async function validateToken(req, res, next) {
         });
       }
     } catch (error) {
+      if (error.message.includes('User ID not found')) {
+        logEvent('auth', 'Failed to extract user ID from token', {
+          error: error.message
+        });
+        return res.status(401).json({ 
+          error: 'Invalid token format',
+          details: 'Could not extract user ID from token',
+          hint: 'Please ensure your token contains user identification claims (sub, userId, or id)'
+        });
+      }
+
       logEvent('auth', 'Error validating token with auth service', {
         error: error.message,
         code: error.code,
@@ -129,23 +160,13 @@ async function validateToken(req, res, next) {
           status: error.response?.status,
           statusText: error.response?.statusText,
           data: error.response?.data
-        },
-        request: {
-          method: error.config?.method,
-          url: error.config?.url,
-          headers: {
-            ...error.config?.headers,
-            'Authorization': 'Bearer [REDACTED]'
-          }
-        },
-        authServiceUrl: AUTH_SERVICE_URL
+        }
       });
       
       if (error.code === 'ECONNREFUSED') {
         return res.status(503).json({ 
           error: 'Auth service is unavailable',
-          details: 'Could not connect to authentication service',
-          authServiceUrl: AUTH_SERVICE_URL
+          details: 'Could not connect to authentication service'
         });
       }
 
@@ -166,15 +187,13 @@ async function validateToken(req, res, next) {
       
       res.status(500).json({ 
         error: 'Error validating token',
-        details: 'An unexpected error occurred while validating your token',
-        hint: 'Please ensure the AUTH_SERVICE_URL environment variable is correctly set'
+        details: 'An unexpected error occurred while validating your token'
       });
     }
   } catch (error) {
     logEvent('auth', 'Unexpected error in token validation', {
       error: error.message,
-      stack: error.stack,
-      authServiceUrl: AUTH_SERVICE_URL
+      stack: error.stack
     });
     res.status(500).json({ 
       error: 'Internal server error',
