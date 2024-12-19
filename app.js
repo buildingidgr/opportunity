@@ -458,18 +458,24 @@ async function setupHttpServer(db) {
       const limit = parseInt(req.query.limit) || 10;
       const userId = req.user.id;
 
+      logEvent('http', 'Starting my-changes request', { 
+        userId,
+        page,
+        limit,
+        query: req.query
+      });
+
       // Validate pagination parameters
       if (page < 1 || limit < 1 || limit > 50) {
+        logEvent('http', 'Invalid pagination parameters', {
+          page,
+          limit,
+          userId
+        });
         return res.status(400).json({
           error: 'Invalid pagination parameters. Page must be >= 1 and limit must be between 1 and 50'
         });
       }
-
-      logEvent('http', 'Fetching opportunities modified by user', { 
-        userId,
-        page,
-        limit
-      });
 
       // Query for opportunities where the user has made status changes
       const query = {
@@ -480,15 +486,40 @@ async function setupHttpServer(db) {
         }
       };
 
+      logEvent('mongodb', 'Executing MongoDB query', { 
+        userId,
+        query: JSON.stringify(query),
+        collection: MONGODB_COLLECTION_NAME
+      });
+
       // Get total count for pagination
       const totalCount = await db.collection(MONGODB_COLLECTION_NAME)
         .countDocuments(query);
 
+      logEvent('mongodb', 'Count query result', { 
+        totalCount,
+        userId,
+        query: JSON.stringify(query)
+      });
+
       // Calculate pagination values
       const totalPages = Math.ceil(totalCount / limit);
+      const skip = (page - 1) * limit;
+
+      logEvent('mongodb', 'Pagination values calculated', { 
+        totalCount,
+        totalPages,
+        skip,
+        limit
+      });
 
       // Validate requested page number
       if (page > totalPages && totalCount > 0) {
+        logEvent('http', 'Page number exceeds total pages', {
+          requestedPage: page,
+          totalPages,
+          totalCount
+        });
         return res.status(400).json({
           error: `Page ${page} does not exist. Total pages available: ${totalPages}`,
           totalItems: totalCount,
@@ -497,22 +528,39 @@ async function setupHttpServer(db) {
         });
       }
 
-      const skip = (page - 1) * limit;
-
       // Fetch opportunities
+      logEvent('mongodb', 'Fetching opportunities', { 
+        query: JSON.stringify(query),
+        skip,
+        limit,
+        sort: { 'lastStatusChange.changedAt': -1 }
+      });
+
       const opportunities = await db.collection(MONGODB_COLLECTION_NAME)
         .find(query)
-        .sort({ 'lastStatusChange.changedAt': -1 }) // Sort by most recent change
+        .sort({ 'lastStatusChange.changedAt': -1 })
         .skip(skip)
         .limit(limit)
         .toArray();
 
+      logEvent('mongodb', 'Opportunities fetched', { 
+        count: opportunities.length,
+        opportunityIds: opportunities.map(o => o._id)
+      });
+
       // Process each opportunity to highlight user's changes
       const processedOpportunities = opportunities.map(opportunity => {
-        // Filter status history to only show this user's changes
-        const userChanges = opportunity.statusHistory.filter(
+        const userChanges = opportunity.statusHistory?.filter(
           change => change.changedBy === userId
-        );
+        ) || [];
+
+        logEvent('processing', 'Processing opportunity', { 
+          opportunityId: opportunity._id,
+          totalStatusChanges: opportunity.statusHistory?.length || 0,
+          userChangesCount: userChanges.length,
+          hasStatusHistory: !!opportunity.statusHistory,
+          currentStatus: opportunity.status
+        });
 
         return {
           _id: opportunity._id,
@@ -524,20 +572,21 @@ async function setupHttpServer(db) {
             to: change.to,
             changedAt: change.changedAt
           })),
-          totalChanges: opportunity.statusHistory.length,
+          totalChanges: opportunity.statusHistory?.length || 0,
           myChangesCount: userChanges.length,
           lastChange: opportunity.lastStatusChange
         };
       });
 
-      logEvent('http', 'Successfully fetched user modified opportunities', { 
-        count: opportunities.length,
+      logEvent('http', 'Successfully processed opportunities', { 
+        totalProcessed: processedOpportunities.length,
+        totalOriginal: opportunities.length,
         page,
         totalPages,
         userId
       });
 
-      res.json({
+      const response = {
         opportunities: processedOpportunities,
         pagination: {
           currentPage: page,
@@ -551,14 +600,29 @@ async function setupHttpServer(db) {
           totalOpportunities: totalCount,
           totalChanges: processedOpportunities.reduce((sum, opp) => sum + opp.myChangesCount, 0)
         }
+      };
+
+      logEvent('http', 'Sending response', { 
+        opportunityCount: processedOpportunities.length,
+        totalPages,
+        currentPage: page,
+        totalItems: totalCount
       });
+
+      res.json(response);
     } catch (error) {
-      logEvent('error', 'Error fetching user modified opportunities', { 
+      logEvent('error', 'Error in my-changes endpoint', { 
         error: error.message,
         stack: error.stack,
-        userId: req.user.id
+        userId: req.user.id,
+        query: req.query,
+        errorName: error.name,
+        errorCode: error.code
       });
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ 
+        error: 'Internal server error',
+        details: error.message
+      });
     }
   });
 
