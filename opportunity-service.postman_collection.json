@@ -1,0 +1,157 @@
+{
+	"info": {
+		"_postman_id": "e5f3f8d1-7c3a-4b5e-8d8c-9f3b3c1d2e4f",
+		"name": "Opportunity Service API",
+		"description": "Collection for testing the Opportunity Service API endpoints",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "your-railway-url",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "your-jwt-token",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						""
+					]
+				},
+				"description": "Check if the service is healthy"
+			}
+		},
+		{
+			"name": "Get Public Opportunities",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{auth_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/opportunities?page=1&limit=10&category=Τεχνικά Έργα & Υποδομές",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"opportunities"
+					],
+					"query": [
+						{
+							"key": "page",
+							"value": "1",
+							"description": "Page number"
+						},
+						{
+							"key": "limit",
+							"value": "10",
+							"description": "Items per page"
+						},
+						{
+							"key": "category",
+							"value": "Τεχνικά Έργα & Υποδομές",
+							"description": "Filter by category"
+						}
+					]
+				},
+				"description": "Get paginated list of public opportunities"
+			}
+		},
+		{
+			"name": "Get Single Opportunity",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{auth_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/opportunities/6761e3f3a2bf30a81b20906e",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"opportunities",
+						"6761e3f3a2bf30a81b20906e"
+					]
+				},
+				"description": "Get a specific opportunity by ID"
+			}
+		},
+		{
+			"name": "Update Opportunity Status",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{auth_token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"status\": \"public\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/opportunities/6761e3f3a2bf30a81b20906e/status",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"opportunities",
+						"6761e3f3a2bf30a81b20906e",
+						"status"
+					]
+				},
+				"description": "Update the status of an opportunity"
+			}
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+} 
