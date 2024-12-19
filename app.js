@@ -486,10 +486,11 @@ async function setupHttpServer(db) {
         }
       };
 
-      logEvent('mongodb', 'Executing MongoDB query', { 
+      logEvent('mongodb', 'Starting my-changes query', { 
         userId,
-        query: JSON.stringify(query),
-        collection: MONGODB_COLLECTION_NAME
+        userIdType: typeof userId,
+        userIdLength: userId.length,
+        query: JSON.stringify(query)
       });
 
       try {
@@ -500,7 +501,8 @@ async function setupHttpServer(db) {
         logEvent('mongodb', 'Count query result', { 
           totalCount,
           userId,
-          query: JSON.stringify(query)
+          query: JSON.stringify(query),
+          collection: MONGODB_COLLECTION_NAME
         });
 
         // Calculate pagination values
