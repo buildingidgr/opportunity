@@ -178,7 +178,7 @@ async function setupHttpServer(db) {
       const limit = parseInt(req.query.limit) || 10;
       const userId = req.user.id;
 
-      logEvent('http', 'Starting my-changes request', { 
+      logEvent('http', 'Starting my-changes request for private opportunities', { 
         userId,
         page,
         limit,
@@ -199,14 +199,19 @@ async function setupHttpServer(db) {
 
       // Query for opportunities where the user has made status changes
       const query = {
-        'statusHistory': {
-          $elemMatch: {
-            'changedBy': userId
-          }
-        }
+        $and: [
+          {
+            'statusHistory': {
+              $elemMatch: {
+                'changedBy': userId
+              }
+            }
+          },
+          { 'status': 'private' }
+        ]
       };
 
-      logEvent('mongodb', 'Starting my-changes query', { 
+      logEvent('mongodb', 'Starting my-changes query for private opportunities', { 
         userId,
         userIdType: typeof userId,
         userIdLength: userId.length,
