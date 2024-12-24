@@ -137,7 +137,7 @@ Retrieves a paginated list of public opportunities. Sensitive data (contact info
 GET /opportunities/:id
 ```
 
-Retrieves a specific opportunity by its MongoDB ObjectId. Returns the complete opportunity data without masking.
+Retrieves a specific opportunity by its MongoDB ObjectId. For public opportunities, sensitive data (location and contact information) is masked. For non-public opportunities (in review, private, rejected), the complete unmasked data is returned.
 
 **Authentication Required**: Yes
 
@@ -146,7 +146,57 @@ Retrieves a specific opportunity by its MongoDB ObjectId. Returns the complete o
 |-----------|--------|----------|--------------------------------|
 | id        | string | Yes      | MongoDB ObjectId of opportunity|
 
-**Success Response (200 OK)**
+**Success Response (200 OK) - Public Opportunity**
+```json
+{
+    "_id": "6761e3f3a2bf30a81b20906e",
+    "type": "opportunity.created",
+    "data": {
+        "project": {
+            "category": {
+                "title": "Τεχνικά Έργα & Υποδομές",
+                "description": "Technical Works & Infrastructure"
+            },
+            "location": {
+                "address": "Generated random address",
+                "coordinates": {
+                    "lat": 40.6823,  // Randomized within 3km
+                    "lng": 21.6498   // Randomized within 3km
+                }
+            },
+            "details": {
+                "description": "Detailed project description",
+                "requirements": "Project requirements"
+            }
+        },
+        "contact": {
+            "fullName": "Generated random name",
+            "email": "Generated random email",
+            "phone": {
+                "countryCode": "+00",
+                "number": "Generated random phone"
+            }
+        }
+    },
+    "status": "public",
+    "lastStatusChange": {
+        "from": "in review",
+        "to": "public",
+        "changedBy": "user_2prIb6NUsyTjopaWeWDjFW8jdGY",
+        "changedAt": "2023-12-20T15:30:45.123Z"
+    },
+    "statusHistory": [
+        {
+            "from": "in review",
+            "to": "public",
+            "changedBy": "user_2prIb6NUsyTjopaWeWDjFW8jdGY",
+            "changedAt": "2023-12-20T15:30:45.123Z"
+        }
+    ]
+}
+```
+
+**Success Response (200 OK) - Non-Public Opportunity**
 ```json
 {
     "_id": "6761e3f3a2bf30a81b20906e",
@@ -178,17 +228,17 @@ Retrieves a specific opportunity by its MongoDB ObjectId. Returns the complete o
             }
         }
     },
-    "status": "public",
+    "status": "in review",  // or "private" or "rejected"
     "lastStatusChange": {
-        "from": "in review",
-        "to": "public",
+        "from": "rejected",
+        "to": "in review",
         "changedBy": "user_2prIb6NUsyTjopaWeWDjFW8jdGY",
         "changedAt": "2023-12-20T15:30:45.123Z"
     },
     "statusHistory": [
         {
-            "from": "in review",
-            "to": "public",
+            "from": "rejected",
+            "to": "in review",
             "changedBy": "user_2prIb6NUsyTjopaWeWDjFW8jdGY",
             "changedAt": "2023-12-20T15:30:45.123Z"
         }

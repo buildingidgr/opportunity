@@ -479,7 +479,54 @@ async function setupHttpServer(db) {
         return res.status(404).json({ error: 'Opportunity not found' });
       }
 
-      logEvent('http', 'Successfully fetched opportunity', { id });
+      // Mask data only if the opportunity is public
+      if (opportunity.status === 'public') {
+        logEvent('http', 'Masking sensitive data for public opportunity', { id });
+        
+        // Create a deep copy to avoid modifying the original
+        const maskedOpportunity = JSON.parse(JSON.stringify(opportunity));
+
+        // Handle nested data structure
+        if (maskedOpportunity.data?.project) {
+          // Mask location data
+          if (maskedOpportunity.data.project.location) {
+            const originalCoords = maskedOpportunity.data.project.location.coordinates;
+            const maskedCoords = getRandomCoordinatesWithinRadius(
+              originalCoords.lat,
+              originalCoords.lng
+            );
+
+            maskedOpportunity.data.project.location = {
+              address: 'Generated random address',
+              coordinates: maskedCoords
+            };
+          }
+        }
+
+        // Mask contact information
+        if (maskedOpportunity.data?.contact) {
+          maskedOpportunity.data.contact = {
+            fullName: 'Generated random name',
+            email: 'Generated random email',
+            phone: {
+              countryCode: '+00',
+              number: 'Generated random phone'
+            }
+          };
+        }
+
+        logEvent('http', 'Successfully fetched and masked public opportunity', { 
+          id,
+          status: 'public'
+        });
+        return res.json(maskedOpportunity);
+      }
+
+      // Return unmasked data for non-public opportunities
+      logEvent('http', 'Successfully fetched opportunity', { 
+        id,
+        status: opportunity.status
+      });
       res.json(opportunity);
     } catch (error) {
       if (error.message.includes('ObjectId')) {
