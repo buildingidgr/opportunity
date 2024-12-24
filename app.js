@@ -172,6 +172,73 @@ async function setupHttpServer(db) {
   });
 
   // Protected routes - require valid JWT
+  // Place specific routes before parameterized routes
+  app.get('/opportunities/map-coordinates', validateToken, async (req, res) => {
+    try {
+      logEvent('http', 'Fetching coordinates for map view');
+
+      // Query for public opportunities with location data
+      const query = {
+        status: 'public',
+        'data.project.location.coordinates': { $exists: true }
+      };
+
+      const opportunities = await db.collection(MONGODB_COLLECTION_NAME)
+        .find(query)
+        .project({
+          _id: 1,
+          'data.project.category.title': 1,
+          'data.project.location.coordinates': 1
+        })
+        .toArray();
+
+      logEvent('mongodb', 'Retrieved opportunities for map', { 
+        count: opportunities.length 
+      });
+
+      // Transform and mask coordinates
+      const mapPoints = opportunities.map(opp => {
+        const originalCoords = opp.data?.project?.location?.coordinates;
+        if (!originalCoords?.lat || !originalCoords?.lng) {
+          return null;
+        }
+
+        const maskedCoords = getRandomCoordinatesWithinRadius(
+          originalCoords.lat,
+          originalCoords.lng
+        );
+
+        return {
+          id: opp._id,
+          category: opp.data?.project?.category?.title || 'Uncategorized',
+          coordinates: maskedCoords
+        };
+      }).filter(Boolean); // Remove null entries
+
+      logEvent('http', 'Sending map coordinates response', { 
+        totalPoints: mapPoints.length 
+      });
+
+      res.json({
+        points: mapPoints,
+        metadata: {
+          totalPoints: mapPoints.length,
+          maskingRadiusKm: MAX_OFFSET_KM,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      logEvent('error', 'Error fetching map coordinates', { 
+        error: error.message,
+        stack: error.stack 
+      });
+      res.status(500).json({ 
+        error: 'Internal server error',
+        details: 'Error fetching map coordinates'
+      });
+    }
+  });
+
   app.get('/opportunities/my-changes', validateToken, async (req, res) => {
     try {
       const page = parseInt(req.query.page) || 1;
@@ -398,7 +465,7 @@ async function setupHttpServer(db) {
     }
   });
 
-  // Protected routes - require valid JWT
+  // Place parameterized routes after specific routes
   app.get('/opportunities/:id', validateToken, async (req, res) => {
     try {
       const id = req.params.id;
@@ -676,73 +743,6 @@ async function setupHttpServer(db) {
         stack: error.stack 
       });
       res.status(500).json({ error: 'Internal server error' });
-    }
-  });
-
-  // Add new endpoint for map coordinates
-  app.get('/opportunities/map-coordinates', validateToken, async (req, res) => {
-    try {
-      logEvent('http', 'Fetching coordinates for map view');
-
-      // Query for public opportunities with location data
-      const query = {
-        status: 'public',
-        'data.project.location.coordinates': { $exists: true }
-      };
-
-      const opportunities = await db.collection(MONGODB_COLLECTION_NAME)
-        .find(query)
-        .project({
-          _id: 1,
-          'data.project.category.title': 1,
-          'data.project.location.coordinates': 1
-        })
-        .toArray();
-
-      logEvent('mongodb', 'Retrieved opportunities for map', { 
-        count: opportunities.length 
-      });
-
-      // Transform and mask coordinates
-      const mapPoints = opportunities.map(opp => {
-        const originalCoords = opp.data?.project?.location?.coordinates;
-        if (!originalCoords?.lat || !originalCoords?.lng) {
-          return null;
-        }
-
-        const maskedCoords = getRandomCoordinatesWithinRadius(
-          originalCoords.lat,
-          originalCoords.lng
-        );
-
-        return {
-          id: opp._id,
-          category: opp.data?.project?.category?.title || 'Uncategorized',
-          coordinates: maskedCoords
-        };
-      }).filter(Boolean); // Remove null entries
-
-      logEvent('http', 'Sending map coordinates response', { 
-        totalPoints: mapPoints.length 
-      });
-
-      res.json({
-        points: mapPoints,
-        metadata: {
-          totalPoints: mapPoints.length,
-          maskingRadiusKm: MAX_OFFSET_KM,
-          timestamp: new Date().toISOString()
-        }
-      });
-    } catch (error) {
-      logEvent('error', 'Error fetching map coordinates', { 
-        error: error.message,
-        stack: error.stack 
-      });
-      res.status(500).json({ 
-        error: 'Internal server error',
-        details: 'Error fetching map coordinates'
-      });
     }
   });
 

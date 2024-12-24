@@ -290,11 +290,11 @@ Retrieves coordinates for all public opportunities, with locations masked within
 {
     "points": [
         {
-            "id": "6761e3f3a2bf30a81b20906e",
-            "category": "Τεχνικά Έργα & Υποδομές",
+            "id": "opportunity-id",
+            "category": "Category Name",
             "coordinates": {
-                "lat": 40.6823,  // Randomized within 3km
-                "lng": 21.6498   // Randomized within 3km
+                "lat": 40.6823,
+                "lng": 21.6498
             }
         }
     ],
