@@ -779,19 +779,31 @@ async function start() {
           logEvent('processing', 'Extracted opportunity data', { 
             messageId,
             opportunityId: opportunityData.id || 'unknown',
+            hasStatus: 'status' in opportunityData,
+            currentStatus: opportunityData.status,
+            dataKeys: Object.keys(opportunityData),
             fullData: opportunityData
           });
 
           // Add status field
+          const originalStatus = opportunityData.status;
           opportunityData.status = 'in review';
           logEvent('processing', 'Added status field to opportunity data', {
             messageId,
-            status: opportunityData.status,
+            originalStatus,
+            newStatus: opportunityData.status,
+            hasStatusAfterSet: 'status' in opportunityData,
+            finalDataKeys: Object.keys(opportunityData),
             finalData: opportunityData
           });
 
           // Store in MongoDB
-          logEvent('mongodb', 'Attempting to store data', { messageId });
+          logEvent('mongodb', 'Attempting to store data', { 
+            messageId,
+            dataToStore: opportunityData,
+            hasStatus: 'status' in opportunityData,
+            status: opportunityData.status
+          });
           const result = await db.collection(MONGODB_COLLECTION_NAME).insertOne(opportunityData);
           logEvent('mongodb', 'Successfully stored data', { 
             messageId,
