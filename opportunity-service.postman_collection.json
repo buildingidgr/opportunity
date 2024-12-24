@@ -36,6 +36,30 @@
 			}
 		},
 		{
+			"name": "Get Map Coordinates",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{auth_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/opportunities/map-coordinates",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"opportunities",
+						"map-coordinates"
+					]
+				},
+				"description": "Get coordinates of public opportunities for map visualization"
+			}
+		},
+		{
 			"name": "Get Public Opportunities",
 			"request": {
 				"method": "GET",
