@@ -10,10 +10,78 @@ const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'opportunities_db';
 const MONGODB_COLLECTION_NAME = process.env.MONGODB_COLLECTION_NAME || 'opportunities';
 const PORT = process.env.PORT || 3000;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service-url';
+const TARGET_DEPLOYMENT_ID = 'your-next-deployment-id'; // Replace with your next deployment ID
 
 // Constants for coordinate masking
 const EARTH_RADIUS_KM = 6371; // Earth's radius in kilometers
 const MAX_OFFSET_KM = 3; // Maximum offset in kilometers
+const CLEANUP_FLAG_COLLECTION = 'cleanup_flags';
+
+// Function to perform one-time database cleanup
+async function performOneTimeCleanup(db) {
+  try {
+    const currentDeploymentId = process.env.RAILWAY_DEPLOYMENT_ID;
+    
+    logEvent('cleanup', 'Checking if database cleanup is needed', {
+      currentDeploymentId,
+      targetDeploymentId: TARGET_DEPLOYMENT_ID
+    });
+
+    // Only proceed if this is the target deployment
+    if (currentDeploymentId !== TARGET_DEPLOYMENT_ID) {
+      logEvent('cleanup', 'Skipping cleanup - not target deployment', {
+        currentDeploymentId,
+        targetDeploymentId: TARGET_DEPLOYMENT_ID
+      });
+      return;
+    }
+
+    // Check if cleanup has already been performed
+    const cleanupFlag = await db.collection(CLEANUP_FLAG_COLLECTION).findOne({
+      deploymentId: currentDeploymentId
+    });
+
+    if (cleanupFlag) {
+      logEvent('cleanup', 'Database cleanup already performed for this deployment', {
+        timestamp: cleanupFlag.timestamp,
+        deploymentId: currentDeploymentId
+      });
+      return;
+    }
+
+    logEvent('cleanup', 'Starting database cleanup for deployment', {
+      deploymentId: currentDeploymentId
+    });
+
+    // Get count before deletion for logging
+    const countBefore = await db.collection(MONGODB_COLLECTION_NAME).countDocuments({});
+
+    // Delete all existing records
+    const result = await db.collection(MONGODB_COLLECTION_NAME).deleteMany({});
+
+    // Record that cleanup has been performed
+    await db.collection(CLEANUP_FLAG_COLLECTION).insertOne({
+      deploymentId: currentDeploymentId,
+      timestamp: new Date(),
+      recordsDeleted: result.deletedCount,
+      recordsBefore: countBefore
+    });
+
+    logEvent('cleanup', 'Database cleanup completed', {
+      deploymentId: currentDeploymentId,
+      recordsBefore: countBefore,
+      recordsDeleted: result.deletedCount,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logEvent('error', 'Error during database cleanup', {
+      error: error.message,
+      stack: error.stack,
+      deploymentId: process.env.RAILWAY_DEPLOYMENT_ID
+    });
+    throw error; // Re-throw to handle in the startup process
+  }
+}
 
 // Function to generate random coordinates within 5km radius
 function getRandomCoordinatesWithinRadius(originalLat, originalLng) {
@@ -842,6 +910,9 @@ async function start() {
     await client.connect();
     db = client.db(MONGODB_DB_NAME);
     logEvent('mongodb', 'Successfully connected to MongoDB');
+
+    // Perform one-time cleanup
+    await performOneTimeCleanup(db);
 
     // Create indexes
     logEvent('mongodb', 'Creating indexes');
