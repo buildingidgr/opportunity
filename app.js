@@ -10,7 +10,7 @@ const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'opportunities_db';
 const MONGODB_COLLECTION_NAME = process.env.MONGODB_COLLECTION_NAME || 'opportunities';
 const PORT = process.env.PORT || 3000;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service-url';
-const TARGET_DEPLOYMENT_ID = 'your-next-deployment-id'; // Replace with your next deployment ID
+const TARGET_DEPLOYMENT_ID = '129f8592-5314-477b-bc3d-65cc551e52e2'; // Replace with your next deployment ID
 
 // Constants for coordinate masking
 const EARTH_RADIUS_KM = 6371; // Earth's radius in kilometers
