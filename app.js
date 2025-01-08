@@ -15,31 +15,6 @@ const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service-ur
 const EARTH_RADIUS_KM = 6371; // Earth's radius in kilometers
 const MAX_OFFSET_KM = 3; // Maximum offset in kilometers
 
-// Function to perform database cleanup
-async function cleanDatabase(db) {
-  try {
-    logEvent('cleanup', 'Starting database cleanup');
-
-    // Get count before deletion for logging
-    const countBefore = await db.collection(MONGODB_COLLECTION_NAME).countDocuments({});
-
-    // Delete all existing records
-    const result = await db.collection(MONGODB_COLLECTION_NAME).deleteMany({});
-
-    logEvent('cleanup', 'Database cleanup completed', {
-      recordsBefore: countBefore,
-      recordsDeleted: result.deletedCount,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    logEvent('error', 'Error during database cleanup', {
-      error: error.message,
-      stack: error.stack
-    });
-    throw error; // Re-throw to handle in the startup process
-  }
-}
-
 // Function to generate random coordinates within 5km radius
 function getRandomCoordinatesWithinRadius(originalLat, originalLng) {
   // Convert max offset from kilometers to radians
@@ -738,9 +713,23 @@ async function setupHttpServer(db) {
           case 'public':
             return newStatus === 'private';
           case 'private':
-            return false; // Cannot change from private
+            // Allow transition to public only if the user made the private transition
+            if (newStatus === 'public') {
+              const lastPrivateTransition = opportunity.statusHistory
+                ?.reverse()
+                ?.find(change => change.to === 'private');
+              
+              logEvent('status', 'Checking private to public transition permission', {
+                userId,
+                lastPrivateTransition,
+                hasPermission: lastPrivateTransition?.changedBy === userId
+              });
+
+              return lastPrivateTransition?.changedBy === userId;
+            }
+            return false;
           case 'rejected':
-            return newStatus === 'in review'; // Allow transition from rejected to in review
+            return newStatus === 'in review';
           default:
             return false;
         }
@@ -749,14 +738,31 @@ async function setupHttpServer(db) {
       if (!isValidTransition) {
         logEvent('http', 'Invalid status transition', { 
           currentStatus,
-          newStatus 
+          newStatus,
+          userId
         });
+
+        // Customize error message for private to public transition
+        if (currentStatus === 'private' && newStatus === 'public') {
+          return res.status(403).json({ 
+            error: 'Only the user who made the private transition can make it public again',
+            currentStatus,
+            requestedStatus: newStatus,
+            allowedTransitions: {
+              'in review': ['public', 'rejected'],
+              'public': ['private'],
+              'private': ['public (only by same user)'],
+              'rejected': ['in review']
+            }
+          });
+        }
+
         return res.status(400).json({ 
           error: `Cannot change status from '${currentStatus}' to '${newStatus}'`,
           allowedTransitions: {
             'in review': ['public', 'rejected'],
             'public': ['private'],
-            'private': [],
+            'private': ['public (only by same user)'],
             'rejected': ['in review']
           }
         });
@@ -855,17 +861,14 @@ async function start() {
   try {
     logEvent('startup', 'Service starting up');
     
-    // Connect to MongoDB first
+    // Connect to MongoDB
     logEvent('mongodb', 'Attempting to connect to MongoDB', { url: MONGODB_URL, database: MONGODB_DB_NAME });
     const client = new MongoClient(MONGODB_URL);
     await client.connect();
     db = client.db(MONGODB_DB_NAME);
     logEvent('mongodb', 'Successfully connected to MongoDB');
 
-    // Clean database on every deployment
-    await cleanDatabase(db);
-
-    // Connect to RabbitMQ after database cleanup
+    // Connect to RabbitMQ
     logEvent('rabbitmq', 'Attempting to connect to RabbitMQ', { url: RABBITMQ_URL });
     connection = await amqp.connect(RABBITMQ_URL);
     channel = await connection.createChannel();
