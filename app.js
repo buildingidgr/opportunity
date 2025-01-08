@@ -10,48 +10,15 @@ const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'opportunities_db';
 const MONGODB_COLLECTION_NAME = process.env.MONGODB_COLLECTION_NAME || 'opportunities';
 const PORT = process.env.PORT || 3000;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service-url';
-const TARGET_DEPLOYMENT_ID = '129f8592-5314-477b-bc3d-65cc551e52e2'; // Replace with your next deployment ID
 
 // Constants for coordinate masking
 const EARTH_RADIUS_KM = 6371; // Earth's radius in kilometers
 const MAX_OFFSET_KM = 3; // Maximum offset in kilometers
-const CLEANUP_FLAG_COLLECTION = 'cleanup_flags';
 
-// Function to perform one-time database cleanup
-async function performOneTimeCleanup(db) {
+// Function to perform database cleanup
+async function cleanDatabase(db) {
   try {
-    const currentDeploymentId = process.env.RAILWAY_DEPLOYMENT_ID;
-    
-    logEvent('cleanup', 'Checking if database cleanup is needed', {
-      currentDeploymentId,
-      targetDeploymentId: TARGET_DEPLOYMENT_ID
-    });
-
-    // Only proceed if this is the target deployment
-    if (currentDeploymentId !== TARGET_DEPLOYMENT_ID) {
-      logEvent('cleanup', 'Skipping cleanup - not target deployment', {
-        currentDeploymentId,
-        targetDeploymentId: TARGET_DEPLOYMENT_ID
-      });
-      return;
-    }
-
-    // Check if cleanup has already been performed
-    const cleanupFlag = await db.collection(CLEANUP_FLAG_COLLECTION).findOne({
-      deploymentId: currentDeploymentId
-    });
-
-    if (cleanupFlag) {
-      logEvent('cleanup', 'Database cleanup already performed for this deployment', {
-        timestamp: cleanupFlag.timestamp,
-        deploymentId: currentDeploymentId
-      });
-      return;
-    }
-
-    logEvent('cleanup', 'Starting database cleanup for deployment', {
-      deploymentId: currentDeploymentId
-    });
+    logEvent('cleanup', 'Starting database cleanup');
 
     // Get count before deletion for logging
     const countBefore = await db.collection(MONGODB_COLLECTION_NAME).countDocuments({});
@@ -59,16 +26,7 @@ async function performOneTimeCleanup(db) {
     // Delete all existing records
     const result = await db.collection(MONGODB_COLLECTION_NAME).deleteMany({});
 
-    // Record that cleanup has been performed
-    await db.collection(CLEANUP_FLAG_COLLECTION).insertOne({
-      deploymentId: currentDeploymentId,
-      timestamp: new Date(),
-      recordsDeleted: result.deletedCount,
-      recordsBefore: countBefore
-    });
-
     logEvent('cleanup', 'Database cleanup completed', {
-      deploymentId: currentDeploymentId,
       recordsBefore: countBefore,
       recordsDeleted: result.deletedCount,
       timestamp: new Date().toISOString()
@@ -76,8 +34,7 @@ async function performOneTimeCleanup(db) {
   } catch (error) {
     logEvent('error', 'Error during database cleanup', {
       error: error.message,
-      stack: error.stack,
-      deploymentId: process.env.RAILWAY_DEPLOYMENT_ID
+      stack: error.stack
     });
     throw error; // Re-throw to handle in the startup process
   }
@@ -898,21 +855,21 @@ async function start() {
   try {
     logEvent('startup', 'Service starting up');
     
-    // Connect to RabbitMQ
-    logEvent('rabbitmq', 'Attempting to connect to RabbitMQ', { url: RABBITMQ_URL });
-    connection = await amqp.connect(RABBITMQ_URL);
-    channel = await connection.createChannel();
-    logEvent('rabbitmq', 'Successfully connected to RabbitMQ');
-
-    // Connect to MongoDB
+    // Connect to MongoDB first
     logEvent('mongodb', 'Attempting to connect to MongoDB', { url: MONGODB_URL, database: MONGODB_DB_NAME });
     const client = new MongoClient(MONGODB_URL);
     await client.connect();
     db = client.db(MONGODB_DB_NAME);
     logEvent('mongodb', 'Successfully connected to MongoDB');
 
-    // Perform one-time cleanup
-    await performOneTimeCleanup(db);
+    // Clean database on every deployment
+    await cleanDatabase(db);
+
+    // Connect to RabbitMQ after database cleanup
+    logEvent('rabbitmq', 'Attempting to connect to RabbitMQ', { url: RABBITMQ_URL });
+    connection = await amqp.connect(RABBITMQ_URL);
+    channel = await connection.createChannel();
+    logEvent('rabbitmq', 'Successfully connected to RabbitMQ');
 
     // Create indexes
     logEvent('mongodb', 'Creating indexes');
