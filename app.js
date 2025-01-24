@@ -942,6 +942,14 @@ async function start() {
             finalData: opportunityData
           });
 
+          // Add metadata
+          opportunityData.metadata = {
+            submittedAt: new Date().toISOString(),
+            source: 'rabbitmq',
+            environment: 'railway',
+            messageId
+          };
+
           // Store in MongoDB
           logEvent('mongodb', 'Attempting to store data', { 
             messageId,
