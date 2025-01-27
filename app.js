@@ -678,6 +678,89 @@ async function setupHttpServer(db, channel, connection) {
     }
   });
 
+  app.get('/opportunities/stats/growth', validateToken, async (req, res) => {
+    try {
+      const { interval = 'weekly', startDate, endDate } = req.query;
+      const now = new Date();
+      const parsedEndDate = endDate ? new Date(endDate) : now;
+      const parsedStartDate = startDate ? new Date(startDate) : new Date(now.setMonth(now.getMonth() - 3)); // Default to last 3 months
+
+      logEvent('http', 'Fetching opportunity growth statistics', { 
+        interval,
+        startDate: parsedStartDate,
+        endDate: parsedEndDate
+      });
+
+      // Validate interval
+      if (!['daily', 'weekly', 'monthly'].includes(interval)) {
+        return res.status(400).json({
+          error: 'Invalid interval',
+          details: 'Interval must be one of: daily, weekly, monthly'
+        });
+      }
+
+      // Build aggregation pipeline
+      const pipeline = [
+        {
+          $match: {
+            'lastStatusChange.to': 'public',
+            'lastStatusChange.changedAt': {
+              $gte: parsedStartDate,
+              $lte: parsedEndDate
+            }
+          }
+        },
+        {
+          $group: {
+            _id: interval === 'daily'
+              ? { $dateToString: { format: '%Y-%m-%d', date: '$lastStatusChange.changedAt' } }
+              : interval === 'weekly'
+                ? { $dateToString: { format: '%Y-%U', date: '$lastStatusChange.changedAt' } }
+                : { $dateToString: { format: '%Y-%m', date: '$lastStatusChange.changedAt' } },
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $sort: { _id: 1 }
+        }
+      ];
+
+      const results = await db.collection(MONGODB_COLLECTION_NAME)
+        .aggregate(pipeline)
+        .toArray();
+
+      // Transform results for chart compatibility
+      const data = results.map(item => ({
+        date: item._id,
+        value: item.count
+      }));
+
+      logEvent('http', 'Sending opportunity growth statistics', { 
+        dataPoints: data.length,
+        interval
+      });
+
+      res.json({
+        data,
+        metadata: {
+          interval,
+          startDate: parsedStartDate.toISOString(),
+          endDate: parsedEndDate.toISOString(),
+          totalOpportunities: data.reduce((sum, item) => sum + item.value, 0)
+        }
+      });
+    } catch (error) {
+      logEvent('error', 'Error fetching opportunity growth statistics', { 
+        error: error.message,
+        stack: error.stack 
+      });
+      res.status(500).json({ 
+        error: 'Internal server error',
+        details: 'Error fetching opportunity growth statistics'
+      });
+    }
+  });
+
   app.patch('/opportunities/:id/status', validateToken, async (req, res) => {
     const opportunityId = req.params.id; // Store ID at the top level
     let currentStatus, newStatus; // Declare variables at the top level
