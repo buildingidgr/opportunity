@@ -615,19 +615,24 @@ async function setupHttpServer(db, channel, connection) {
               coordinates: maskedCoords
             };
           }
+
+          // Truncate description to 30 words if it exists
+          if (maskedOpp.data.project.details?.description) {
+            const words = maskedOpp.data.project.details.description.split(/\s+/);
+            if (words.length > 30) {
+              maskedOpp.data.project.details.description = words.slice(0, 30).join(' ') + '...';
+            }
+          }
         }
 
-        // Mask contact information
-        if (maskedOpp.data && maskedOpp.data.contact) {
-          maskedOpp.data.contact = {
-            fullName: 'Generated random name',
-            email: 'Generated random email',
-            phone: {
-              countryCode: '+00',
-              number: 'Generated random phone'
-            }
-          };
+        // Remove contact information
+        if (maskedOpp.data) {
+          delete maskedOpp.data.contact;
         }
+
+        // Remove status history and last status change
+        delete maskedOpp.lastStatusChange;
+        delete maskedOpp.statusHistory;
 
         return maskedOpp;
       });
