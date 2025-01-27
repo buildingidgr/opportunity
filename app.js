@@ -682,13 +682,53 @@ async function setupHttpServer(db, channel, connection) {
     try {
       const { interval = 'weekly', startDate, endDate } = req.query;
       const now = new Date();
+
+      // Validate date formats
+      const dateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
+      
+      if (startDate && !dateRegex.test(startDate)) {
+        return res.status(400).json({
+          error: 'Invalid startDate format',
+          details: 'startDate must be in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)'
+        });
+      }
+
+      if (endDate && !dateRegex.test(endDate)) {
+        return res.status(400).json({
+          error: 'Invalid endDate format',
+          details: 'endDate must be in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)'
+        });
+      }
+
       const parsedEndDate = endDate ? new Date(endDate) : now;
-      const parsedStartDate = startDate ? new Date(startDate) : new Date(now.setMonth(now.getMonth() - 3)); // Default to last 3 months
+      const parsedStartDate = startDate ? new Date(startDate) : new Date(now.setMonth(now.getMonth() - 3));
+
+      // Validate date values
+      if (isNaN(parsedStartDate.getTime())) {
+        return res.status(400).json({
+          error: 'Invalid startDate',
+          details: 'startDate could not be parsed into a valid date'
+        });
+      }
+
+      if (isNaN(parsedEndDate.getTime())) {
+        return res.status(400).json({
+          error: 'Invalid endDate',
+          details: 'endDate could not be parsed into a valid date'
+        });
+      }
+
+      if (parsedStartDate > parsedEndDate) {
+        return res.status(400).json({
+          error: 'Invalid date range',
+          details: 'startDate must be before or equal to endDate'
+        });
+      }
 
       logEvent('http', 'Fetching opportunity growth statistics', { 
         interval,
-        startDate: parsedStartDate,
-        endDate: parsedEndDate
+        startDate: parsedStartDate.toISOString(),
+        endDate: parsedEndDate.toISOString()
       });
 
       // Validate interval
@@ -737,7 +777,11 @@ async function setupHttpServer(db, channel, connection) {
 
       logEvent('http', 'Sending opportunity growth statistics', { 
         dataPoints: data.length,
-        interval
+        interval,
+        dateRange: {
+          start: parsedStartDate.toISOString(),
+          end: parsedEndDate.toISOString()
+        }
       });
 
       res.json({

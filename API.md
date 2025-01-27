@@ -445,6 +445,124 @@ Retrieves opportunities where the authenticated user has made status changes. On
 }
 ```
 
+### 4. Get Opportunity Growth Statistics
+```http
+GET /opportunities/stats/growth
+```
+
+Retrieves statistics about the growth of public opportunities over time. This endpoint is designed to provide data compatible with chart visualization libraries, particularly shadcn/ui chart components.
+
+**Authentication Required**: Yes
+
+**Query Parameters**
+| Parameter  | Type    | Required | Default | Description                                           |
+|------------|---------|----------|---------|-------------------------------------------------------|
+| interval   | string  | No       | weekly  | Time interval for grouping data (daily/weekly/monthly)|
+| startDate  | string  | No       | 3 months ago | Start date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ) |
+| endDate    | string  | No       | now     | End date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)    |
+
+**Success Response (200 OK)**
+```json
+{
+    "data": [
+        {
+            "date": "2024-01",     // Format varies by interval:
+                                   // daily: "YYYY-MM-DD"
+                                   // weekly: "YYYY-WW"
+                                   // monthly: "YYYY-MM"
+            "value": 5             // Number of opportunities made public in this period
+        }
+    ],
+    "metadata": {
+        "interval": "weekly",
+        "startDate": "2024-01-01T00:00:00.000Z",
+        "endDate": "2024-03-21T00:00:00.000Z",
+        "totalOpportunities": 5
+    }
+}
+```
+
+**Error Responses**
+
+*400 Bad Request - Invalid Date Format*
+```json
+{
+    "error": "Invalid startDate format",
+    "details": "startDate must be in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)"
+}
+```
+
+*400 Bad Request - Invalid Date Range*
+```json
+{
+    "error": "Invalid date range",
+    "details": "startDate must be before or equal to endDate"
+}
+```
+
+*400 Bad Request - Invalid Interval*
+```json
+{
+    "error": "Invalid interval",
+    "details": "Interval must be one of: daily, weekly, monthly"
+}
+```
+
+*401 Unauthorized*
+```json
+{
+    "error": "Authorization header missing or invalid"
+}
+```
+
+*500 Internal Server Error*
+```json
+{
+    "error": "Internal server error",
+    "details": "Error fetching opportunity growth statistics"
+}
+```
+
+**Example Usage**
+
+```bash
+# Get weekly growth statistics for Q1 2024
+curl -X GET 'https://your-api/opportunities/stats/growth?interval=weekly&startDate=2024-01-01T00:00:00.000Z&endDate=2024-03-31T23:59:59.999Z' \
+  -H 'Authorization: Bearer your-jwt-token'
+```
+
+**Notes**
+- If no dates are provided, the endpoint defaults to showing the last 3 months of data
+- The response data is sorted chronologically
+- All dates in the response are in ISO 8601 format
+- The endpoint counts opportunities based on when they were changed to 'public' status
+- Weekly intervals use ISO week numbers (1-53)
+
+**Usage with shadcn/ui**
+```typescript
+// React component example
+import { LineChart } from '@shadcn/ui/charts';
+
+function OpportunityGrowthChart() {
+  const [data, setData] = useState([]);
+
+  useEffect(() => {
+    fetch('/opportunities/stats/growth?interval=monthly')
+      .then(res => res.json())
+      .then(response => setData(response.data));
+  }, []);
+
+  return (
+    <LineChart
+      data={data}
+      xField="date"
+      yField="value"
+      title="Opportunity Growth Over Time"
+    />
+  );
+}
+```
+
 ## Data Masking Rules
 The following data masking rules apply to public opportunities:
 
