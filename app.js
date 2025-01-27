@@ -832,7 +832,13 @@ async function setupHttpServer(db) {
             throw new Error('RabbitMQ channel is not available');
           }
 
-          channel.publish(
+          // Check if the channel is still open and connection is valid
+          if (!connection || connection.connection.stream.destroyed) {
+            throw new Error('RabbitMQ connection is closed or invalid');
+          }
+
+          // Attempt to publish with additional error handling
+          const publishResult = channel.publish(
             '',  // default exchange
             'public-opportunities',
             Buffer.from(JSON.stringify(queueMessage)),
@@ -842,6 +848,11 @@ async function setupHttpServer(db) {
               messageId: `${id}_${Date.now()}`
             }
           );
+
+          // Check if publish was successful
+          if (publishResult === false) {
+            throw new Error('Channel publish returned false');
+          }
 
           logEvent('rabbitmq', 'Successfully published to public-opportunities queue', {
             opportunityId: id
@@ -858,7 +869,8 @@ async function setupHttpServer(db) {
             },
             connectionDetails: {
               url: RABBITMQ_URL,
-              isConnected: !!connection
+              isConnected: !!connection,
+              connectionState: connection ? connection.connection.stream.readyState : 'no connection'
             },
             systemInfo: {
               platform: process.platform,
@@ -866,7 +878,9 @@ async function setupHttpServer(db) {
               env: process.env.NODE_ENV || 'development'
             }
           });
-          // We don't throw here as the status update was successful
+          
+          // Optionally, you might want to throw the error to indicate a problem
+          throw new Error(`Failed to publish to queue: ${publishError.message}`);
         }
       }
 
