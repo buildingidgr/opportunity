@@ -165,7 +165,7 @@ async function validateToken(req, res, next) {
   }
 }
 
-async function setupHttpServer(db) {
+async function setupHttpServer(db, channel, connection) {
   // Health check endpoint for Railway - no auth required
   app.get('/', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
@@ -966,6 +966,13 @@ async function setupHttpServer(db) {
         return res.status(400).json({ error: 'Invalid ID format' });
       }
       
+      // Get channel and connection status safely
+      const channelStatus = {
+        exists: !!channel,
+        isOpen: channel && !channel.closing,
+        connection: connection ? 'connected' : 'disconnected'
+      };
+      
       logEvent('error', 'Error updating opportunity status', { 
         error: error.message,
         stack: error.stack,
@@ -975,10 +982,7 @@ async function setupHttpServer(db) {
         newStatus: newStatus || 'unknown',
         userId: req.user?.id,
         isRabbitMQError: error.message.includes('RabbitMQ') || error.message.includes('queue'),
-        channelStatus: channel ? {
-          isOpen: !channel.closing,
-          connection: connection ? 'connected' : 'disconnected'
-        } : 'no channel'
+        channelStatus
       });
       res.status(500).json({ 
         error: 'Internal server error',
@@ -1060,8 +1064,8 @@ async function start() {
     );
     logEvent('mongodb', 'Indexes created successfully');
 
-    // Setup HTTP server
-    await setupHttpServer(db);
+    // Setup HTTP server with all necessary dependencies
+    await setupHttpServer(db, channel, connection);
 
     // Ensure the queues exist
     logEvent('rabbitmq', 'Asserting queues existence');
