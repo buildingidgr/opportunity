@@ -455,9 +455,9 @@ Retrieves statistics about the growth of public opportunities over time. This en
 **Authentication Required**: Yes
 
 **Query Parameters**
-| Parameter  | Type    | Required | Default | Description                                           |
+| Parameter  | Type    | Required | Default | Description                                                |
 |------------|---------|----------|---------|-------------------------------------------------------|
-| interval   | string  | No       | weekly  | Time interval for grouping data (daily/weekly/monthly)|
+| interval   | string  | No       | weekly  | Time interval for grouping data (hourly/daily/weekly/monthly)|
 | startDate  | string  | No       | 3 months ago | Start date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ) |
 | endDate    | string  | No       | now     | End date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)    |
 
@@ -467,6 +467,7 @@ Retrieves statistics about the growth of public opportunities over time. This en
     "data": [
         {
             "date": "2024-01",     // Format varies by interval:
+                                   // hourly: "YYYY-MM-DDTHH:00:00.000Z"
                                    // daily: "YYYY-MM-DD"
                                    // weekly: "YYYY-WW"
                                    // monthly: "YYYY-MM"
@@ -500,11 +501,19 @@ Retrieves statistics about the growth of public opportunities over time. This en
 }
 ```
 
+*400 Bad Request - Invalid Date Range for Hourly Interval*
+```json
+{
+    "error": "Invalid date range for hourly interval",
+    "details": "Date range for hourly interval cannot exceed 7 days"
+}
+```
+
 *400 Bad Request - Invalid Interval*
 ```json
 {
     "error": "Invalid interval",
-    "details": "Interval must be one of: daily, weekly, monthly"
+    "details": "Interval must be one of: hourly, daily, weekly, monthly"
 }
 ```
 
@@ -529,6 +538,10 @@ Retrieves statistics about the growth of public opportunities over time. This en
 # Get weekly growth statistics for Q1 2024
 curl -X GET 'https://your-api/opportunities/stats/growth?interval=weekly&startDate=2024-01-01T00:00:00.000Z&endDate=2024-03-31T23:59:59.999Z' \
   -H 'Authorization: Bearer your-jwt-token'
+
+# Get hourly growth statistics for the last 24 hours
+curl -X GET 'https://your-api/opportunities/stats/growth?interval=hourly&startDate=2024-03-20T00:00:00.000Z&endDate=2024-03-21T00:00:00.000Z' \
+  -H 'Authorization: Bearer your-jwt-token'
 ```
 
 **Notes**
@@ -537,6 +550,8 @@ curl -X GET 'https://your-api/opportunities/stats/growth?interval=weekly&startDa
 - All dates in the response are in ISO 8601 format
 - The endpoint counts opportunities based on when they were changed to 'public' status
 - Weekly intervals use ISO week numbers (1-53)
+- Hourly intervals are limited to a maximum of 7 days to prevent performance issues
+- Hourly data points are aligned to the start of each hour (e.g., 13:00:00)
 
 **Usage with shadcn/ui**
 ```typescript

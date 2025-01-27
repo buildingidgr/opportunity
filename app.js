@@ -725,6 +725,15 @@ async function setupHttpServer(db, channel, connection) {
         });
       }
 
+      // For hourly interval, limit the date range to 7 days to prevent performance issues
+      if (interval === 'hourly' && 
+          (parsedEndDate.getTime() - parsedStartDate.getTime()) > 7 * 24 * 60 * 60 * 1000) {
+        return res.status(400).json({
+          error: 'Invalid date range for hourly interval',
+          details: 'Date range for hourly interval cannot exceed 7 days'
+        });
+      }
+
       logEvent('http', 'Fetching opportunity growth statistics', { 
         interval,
         startDate: parsedStartDate.toISOString(),
@@ -732,10 +741,10 @@ async function setupHttpServer(db, channel, connection) {
       });
 
       // Validate interval
-      if (!['daily', 'weekly', 'monthly'].includes(interval)) {
+      if (!['hourly', 'daily', 'weekly', 'monthly'].includes(interval)) {
         return res.status(400).json({
           error: 'Invalid interval',
-          details: 'Interval must be one of: daily, weekly, monthly'
+          details: 'Interval must be one of: hourly, daily, weekly, monthly'
         });
       }
 
@@ -752,11 +761,13 @@ async function setupHttpServer(db, channel, connection) {
         },
         {
           $group: {
-            _id: interval === 'daily'
-              ? { $dateToString: { format: '%Y-%m-%d', date: '$lastStatusChange.changedAt' } }
-              : interval === 'weekly'
-                ? { $dateToString: { format: '%Y-%U', date: '$lastStatusChange.changedAt' } }
-                : { $dateToString: { format: '%Y-%m', date: '$lastStatusChange.changedAt' } },
+            _id: interval === 'hourly'
+              ? { $dateToString: { format: '%Y-%m-%dT%H:00:00.000Z', date: '$lastStatusChange.changedAt' } }
+              : interval === 'daily'
+                ? { $dateToString: { format: '%Y-%m-%d', date: '$lastStatusChange.changedAt' } }
+                : interval === 'weekly'
+                  ? { $dateToString: { format: '%Y-%U', date: '$lastStatusChange.changedAt' } }
+                  : { $dateToString: { format: '%Y-%m', date: '$lastStatusChange.changedAt' } },
             count: { $sum: 1 }
           }
         },
