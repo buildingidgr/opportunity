@@ -776,6 +776,15 @@ async function setupHttpServer(db) {
         changedAt: new Date(),
       };
 
+      logEvent('mongodb', 'Attempting status update in MongoDB', {
+        opportunityId: id,
+        statusChange,
+        update: {
+          status: newStatus,
+          lastStatusChange: statusChange
+        }
+      });
+
       // Update the status and add to history
       const result = await db.collection(MONGODB_COLLECTION_NAME)
         .updateOne(
@@ -790,6 +799,13 @@ async function setupHttpServer(db) {
             }
           }
         );
+
+      logEvent('mongodb', 'Status update result from MongoDB', {
+        opportunityId: id,
+        modifiedCount: result.modifiedCount,
+        matchedCount: result.matchedCount,
+        acknowledged: result.acknowledged
+      });
 
       if (result.modifiedCount === 0) {
         logEvent('http', 'No changes made to opportunity', { id });
@@ -950,7 +966,17 @@ async function setupHttpServer(db) {
       
       logEvent('error', 'Error updating opportunity status', { 
         error: error.message,
-        stack: error.stack 
+        stack: error.stack,
+        opportunityId: id,
+        requestBody: req.body,
+        currentStatus,
+        newStatus,
+        userId,
+        isRabbitMQError: error.message.includes('RabbitMQ') || error.message.includes('queue'),
+        channelStatus: channel ? {
+          isOpen: !channel.closing,
+          connection: connection ? 'connected' : 'disconnected'
+        } : 'no channel'
       });
       res.status(500).json({ error: 'Internal server error' });
     }
