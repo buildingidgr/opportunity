@@ -818,8 +818,19 @@ async function setupHttpServer(db) {
 
           logEvent('rabbitmq', 'Publishing to public-opportunities queue', {
             opportunityId: id,
-            eventType: 'opportunity_public'
+            eventType: 'opportunity_public',
+            queueName: 'public-opportunities',
+            messageSize: Buffer.byteLength(JSON.stringify(queueMessage)),
+            channelStatus: {
+              isOpen: channel && !channel.closing,
+              connection: connection ? 'connected' : 'disconnected'
+            }
           });
+
+          // Verify channel and connection before publishing
+          if (!channel || channel.closing) {
+            throw new Error('RabbitMQ channel is not available');
+          }
 
           channel.publish(
             '',  // default exchange
@@ -836,10 +847,24 @@ async function setupHttpServer(db) {
             opportunityId: id
           });
         } catch (publishError) {
-          logEvent('error', 'Failed to publish to public-opportunities queue', {
+          logEvent('error', 'Comprehensive RabbitMQ publish failure', {
             error: publishError.message,
             stack: publishError.stack,
-            opportunityId: id
+            opportunityId: id,
+            channelStatus: {
+              exists: !!channel,
+              isOpen: channel && !channel.closing,
+              connection: connection ? 'connected' : 'disconnected'
+            },
+            connectionDetails: {
+              url: RABBITMQ_URL,
+              isConnected: !!connection
+            },
+            systemInfo: {
+              platform: process.platform,
+              nodeVersion: process.version,
+              env: process.env.NODE_ENV || 'development'
+            }
           });
           // We don't throw here as the status update was successful
         }
