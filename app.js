@@ -799,8 +799,22 @@ async function setupHttpServer(db) {
       // If status changed to public, publish to public-opportunities queue
       if (newStatus === 'public') {
         try {
+          logEvent('status', 'Starting public status update process', {
+            opportunityId: id,
+            previousStatus: currentStatus,
+            newStatus: newStatus,
+            userId
+          });
+
           const opportunityDetails = await db.collection(MONGODB_COLLECTION_NAME)
             .findOne({ _id: new ObjectId(id) });
+          
+          logEvent('status', 'Retrieved updated opportunity details', {
+            opportunityId: id,
+            hasData: !!opportunityDetails,
+            currentStatus: opportunityDetails?.status,
+            lastChange: opportunityDetails?.lastStatusChange
+          });
             
           const queueMessage = {
             eventType: 'opportunity_public',
@@ -816,6 +830,17 @@ async function setupHttpServer(db) {
             }
           };
 
+          logEvent('status', 'Prepared queue message', {
+            opportunityId: id,
+            messageSize: Buffer.byteLength(JSON.stringify(queueMessage)),
+            messageContent: {
+              eventType: queueMessage.eventType,
+              opportunityId: queueMessage.opportunity.id,
+              status: queueMessage.opportunity.status,
+              metadata: queueMessage.opportunity.metadata
+            }
+          });
+
           logEvent('rabbitmq', 'Publishing to public-opportunities queue', {
             opportunityId: id,
             eventType: 'opportunity_public',
@@ -829,11 +854,21 @@ async function setupHttpServer(db) {
 
           // Verify channel and connection before publishing
           if (!channel || channel.closing) {
+            logEvent('rabbitmq', 'Channel validation failed', {
+              opportunityId: id,
+              channelExists: !!channel,
+              channelClosing: channel?.closing
+            });
             throw new Error('RabbitMQ channel is not available');
           }
 
           // Check if the channel is still open and connection is valid
           if (!connection || connection.connection.stream.destroyed) {
+            logEvent('rabbitmq', 'Connection validation failed', {
+              opportunityId: id,
+              connectionExists: !!connection,
+              streamDestroyed: connection?.connection?.stream?.destroyed
+            });
             throw new Error('RabbitMQ connection is closed or invalid');
           }
 
@@ -851,11 +886,19 @@ async function setupHttpServer(db) {
 
           // Check if publish was successful
           if (publishResult === false) {
+            logEvent('rabbitmq', 'Publish operation returned false', {
+              opportunityId: id,
+              channelState: {
+                isOpen: channel && !channel.closing,
+                connection: connection ? 'connected' : 'disconnected'
+              }
+            });
             throw new Error('Channel publish returned false');
           }
 
           logEvent('rabbitmq', 'Successfully published to public-opportunities queue', {
-            opportunityId: id
+            opportunityId: id,
+            messageId: `${id}_${Date.now()}`
           });
         } catch (publishError) {
           logEvent('error', 'Comprehensive RabbitMQ publish failure', {
@@ -870,16 +913,17 @@ async function setupHttpServer(db) {
             connectionDetails: {
               url: RABBITMQ_URL,
               isConnected: !!connection,
-              connectionState: connection ? connection.connection.stream.readyState : 'no connection'
+              connectionState: connection ? connection.connection.stream.readyState : 'no connection',
+              connectionError: connection?.connection?.err?.message
             },
             systemInfo: {
               platform: process.platform,
               nodeVersion: process.version,
-              env: process.env.NODE_ENV || 'development'
+              env: process.env.NODE_ENV || 'development',
+              memory: process.memoryUsage()
             }
           });
           
-          // Optionally, you might want to throw the error to indicate a problem
           throw new Error(`Failed to publish to queue: ${publishError.message}`);
         }
       }
