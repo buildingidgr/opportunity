@@ -674,13 +674,13 @@ async function setupHttpServer(db) {
   });
 
   app.patch('/opportunities/:id/status', validateToken, async (req, res) => {
+    const opportunityId = req.params.id; // Store ID at the top level
     try {
-      const id = req.params.id;
       const newStatus = req.body.status?.toLowerCase();
       const userId = req.user.id; // Get user ID from the validated token
       
       logEvent('http', 'Attempting to update opportunity status', { 
-        id,
+        opportunityId,
         newStatus,
         userId 
       });
@@ -696,10 +696,10 @@ async function setupHttpServer(db) {
 
       // Get current opportunity
       const opportunity = await db.collection(MONGODB_COLLECTION_NAME)
-        .findOne({ _id: new ObjectId(id) });
+        .findOne({ _id: new ObjectId(opportunityId) });
 
       if (!opportunity) {
-        logEvent('http', 'Opportunity not found', { id });
+        logEvent('http', 'Opportunity not found', { opportunityId });
         return res.status(404).json({ error: 'Opportunity not found' });
       }
 
@@ -777,7 +777,7 @@ async function setupHttpServer(db) {
       };
 
       logEvent('mongodb', 'Attempting status update in MongoDB', {
-        opportunityId: id,
+        opportunityId,
         statusChange,
         update: {
           status: newStatus,
@@ -788,7 +788,7 @@ async function setupHttpServer(db) {
       // Update the status and add to history
       const result = await db.collection(MONGODB_COLLECTION_NAME)
         .updateOne(
-          { _id: new ObjectId(id) },
+          { _id: new ObjectId(opportunityId) },
           { 
             $set: { 
               status: newStatus,
@@ -801,14 +801,14 @@ async function setupHttpServer(db) {
         );
 
       logEvent('mongodb', 'Status update result from MongoDB', {
-        opportunityId: id,
+        opportunityId,
         modifiedCount: result.modifiedCount,
         matchedCount: result.matchedCount,
         acknowledged: result.acknowledged
       });
 
       if (result.modifiedCount === 0) {
-        logEvent('http', 'No changes made to opportunity', { id });
+        logEvent('http', 'No changes made to opportunity', { opportunityId });
         return res.status(304).end();
       }
 
@@ -816,17 +816,17 @@ async function setupHttpServer(db) {
       if (newStatus === 'public') {
         try {
           logEvent('status', 'Starting public status update process', {
-            opportunityId: id,
+            opportunityId,
             previousStatus: currentStatus,
             newStatus: newStatus,
             userId
           });
 
           const opportunityDetails = await db.collection(MONGODB_COLLECTION_NAME)
-            .findOne({ _id: new ObjectId(id) });
+            .findOne({ _id: new ObjectId(opportunityId) });
           
           logEvent('status', 'Retrieved updated opportunity details', {
-            opportunityId: id,
+            opportunityId,
             hasData: !!opportunityDetails,
             currentStatus: opportunityDetails?.status,
             lastChange: opportunityDetails?.lastStatusChange
@@ -847,7 +847,7 @@ async function setupHttpServer(db) {
           };
 
           logEvent('status', 'Prepared queue message', {
-            opportunityId: id,
+            opportunityId,
             messageSize: Buffer.byteLength(JSON.stringify(queueMessage)),
             messageContent: {
               eventType: queueMessage.eventType,
@@ -858,7 +858,7 @@ async function setupHttpServer(db) {
           });
 
           logEvent('rabbitmq', 'Publishing to public-opportunities queue', {
-            opportunityId: id,
+            opportunityId,
             eventType: 'opportunity_public',
             queueName: 'public-opportunities',
             messageSize: Buffer.byteLength(JSON.stringify(queueMessage)),
@@ -871,7 +871,7 @@ async function setupHttpServer(db) {
           // Verify channel and connection before publishing
           if (!channel || channel.closing) {
             logEvent('rabbitmq', 'Channel validation failed', {
-              opportunityId: id,
+              opportunityId,
               channelExists: !!channel,
               channelClosing: channel?.closing
             });
@@ -881,7 +881,7 @@ async function setupHttpServer(db) {
           // Check if the channel is still open and connection is valid
           if (!connection || connection.connection.stream.destroyed) {
             logEvent('rabbitmq', 'Connection validation failed', {
-              opportunityId: id,
+              opportunityId,
               connectionExists: !!connection,
               streamDestroyed: connection?.connection?.stream?.destroyed
             });
@@ -896,14 +896,14 @@ async function setupHttpServer(db) {
             {
               persistent: true,
               contentType: 'application/json',
-              messageId: `${id}_${Date.now()}`
+              messageId: `${opportunityId}_${Date.now()}`
             }
           );
 
           // Check if publish was successful
           if (publishResult === false) {
             logEvent('rabbitmq', 'Publish operation returned false', {
-              opportunityId: id,
+              opportunityId,
               channelState: {
                 isOpen: channel && !channel.closing,
                 connection: connection ? 'connected' : 'disconnected'
@@ -913,14 +913,14 @@ async function setupHttpServer(db) {
           }
 
           logEvent('rabbitmq', 'Successfully published to public-opportunities queue', {
-            opportunityId: id,
-            messageId: `${id}_${Date.now()}`
+            opportunityId,
+            messageId: `${opportunityId}_${Date.now()}`
           });
         } catch (publishError) {
           logEvent('error', 'Comprehensive RabbitMQ publish failure', {
             error: publishError.message,
             stack: publishError.stack,
-            opportunityId: id,
+            opportunityId,
             channelStatus: {
               exists: !!channel,
               isOpen: channel && !channel.closing,
@@ -945,7 +945,7 @@ async function setupHttpServer(db) {
       }
 
       logEvent('http', 'Successfully updated opportunity status', { 
-        id,
+        opportunityId,
         statusChange
       });
 
@@ -960,18 +960,18 @@ async function setupHttpServer(db) {
       });
     } catch (error) {
       if (error.message.includes('ObjectId')) {
-        logEvent('http', 'Invalid ID format', { id: req.params.id });
+        logEvent('http', 'Invalid ID format', { opportunityId });
         return res.status(400).json({ error: 'Invalid ID format' });
       }
       
       logEvent('error', 'Error updating opportunity status', { 
         error: error.message,
         stack: error.stack,
-        opportunityId: id,
+        opportunityId,
         requestBody: req.body,
         currentStatus,
         newStatus,
-        userId,
+        userId: req.user?.id,
         isRabbitMQError: error.message.includes('RabbitMQ') || error.message.includes('queue'),
         channelStatus: channel ? {
           isOpen: !channel.closing,
