@@ -675,8 +675,10 @@ async function setupHttpServer(db) {
 
   app.patch('/opportunities/:id/status', validateToken, async (req, res) => {
     const opportunityId = req.params.id; // Store ID at the top level
+    let currentStatus, newStatus; // Declare variables at the top level
+    
     try {
-      const newStatus = req.body.status?.toLowerCase();
+      newStatus = req.body.status?.toLowerCase();
       const userId = req.user.id; // Get user ID from the validated token
       
       logEvent('http', 'Attempting to update opportunity status', { 
@@ -703,7 +705,7 @@ async function setupHttpServer(db) {
         return res.status(404).json({ error: 'Opportunity not found' });
       }
 
-      const currentStatus = opportunity.status?.toLowerCase();
+      currentStatus = opportunity.status?.toLowerCase();
       
       // Validate status transitions
       const isValidTransition = (() => {
@@ -969,8 +971,8 @@ async function setupHttpServer(db) {
         stack: error.stack,
         opportunityId,
         requestBody: req.body,
-        currentStatus,
-        newStatus,
+        currentStatus: currentStatus || 'unknown',
+        newStatus: newStatus || 'unknown',
         userId: req.user?.id,
         isRabbitMQError: error.message.includes('RabbitMQ') || error.message.includes('queue'),
         channelStatus: channel ? {
@@ -978,7 +980,10 @@ async function setupHttpServer(db) {
           connection: connection ? 'connected' : 'disconnected'
         } : 'no channel'
       });
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ 
+        error: 'Internal server error',
+        details: error.message
+      });
     }
   });
 
