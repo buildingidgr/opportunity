@@ -796,6 +796,55 @@ async function setupHttpServer(db) {
         return res.status(304).end();
       }
 
+      // If status changed to public, publish to public-opportunities queue
+      if (newStatus === 'public') {
+        try {
+          const opportunityDetails = await db.collection(MONGODB_COLLECTION_NAME)
+            .findOne({ _id: new ObjectId(id) });
+            
+          const queueMessage = {
+            eventType: 'opportunity_public',
+            opportunity: {
+              id: opportunityDetails._id.toString(),
+              data: opportunityDetails.data,
+              status: opportunityDetails.status,
+              lastStatusChange: statusChange,
+              metadata: {
+                publishedAt: new Date().toISOString(),
+                previousStatus: currentStatus
+              }
+            }
+          };
+
+          logEvent('rabbitmq', 'Publishing to public-opportunities queue', {
+            opportunityId: id,
+            eventType: 'opportunity_public'
+          });
+
+          channel.publish(
+            '',  // default exchange
+            'public-opportunities',
+            Buffer.from(JSON.stringify(queueMessage)),
+            {
+              persistent: true,
+              contentType: 'application/json',
+              messageId: `${id}_${Date.now()}`
+            }
+          );
+
+          logEvent('rabbitmq', 'Successfully published to public-opportunities queue', {
+            opportunityId: id
+          });
+        } catch (publishError) {
+          logEvent('error', 'Failed to publish to public-opportunities queue', {
+            error: publishError.message,
+            stack: publishError.stack,
+            opportunityId: id
+          });
+          // We don't throw here as the status update was successful
+        }
+      }
+
       logEvent('http', 'Successfully updated opportunity status', { 
         id,
         statusChange
@@ -900,10 +949,11 @@ async function start() {
     // Setup HTTP server
     await setupHttpServer(db);
 
-    // Ensure the queue exists
-    logEvent('rabbitmq', 'Asserting queue existence', { queue: 'opportunity' });
+    // Ensure the queues exist
+    logEvent('rabbitmq', 'Asserting queues existence');
     await channel.assertQueue('opportunity', { durable: true });
-    logEvent('rabbitmq', 'Queue assertion successful');
+    await channel.assertQueue('public-opportunities', { durable: true });
+    logEvent('rabbitmq', 'Queues assertion successful');
 
     // Consume messages
     channel.consume('opportunity', async (msg) => {
